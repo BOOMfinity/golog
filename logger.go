@@ -1,3 +1,7 @@
+// Package golog is a basic logger with a few extra things like custom values / functions.
+//
+// Format:
+// <time> | <level> | <name and modules> | <custom1> | <custom2> | <custom...> -> <message>
 package golog
 
 import (
@@ -7,12 +11,16 @@ import (
 	"text/template"
 )
 
+// Custom functions used by all loggers in the program.
 var globalCustoms sync.Map
 
 func AddGlobalCustom(name string, fn CustomHandler) {
 	globalCustoms.Store(name, fn)
 }
 
+// Level defines the logging level.
+//
+// Logger will write the output to the console only if its Level is higher or equal to the current Level of Option.
 type Level uint8
 
 const (
@@ -40,7 +48,7 @@ func (x Level) String() string {
 }
 
 var (
-	DefaultTemplate, _ = template.New(`golog`).
+	defaultTemplate, _ = template.New(`golog`).
 		Funcs(template.FuncMap{
 			"join": func(a []string, b string) string {
 				return strings.Join(a, b)
@@ -60,14 +68,20 @@ var (
 )
 
 type Logger interface {
+	// AddCustom defines function that can be used by Option.Custom.
 	AddCustom(name string, fn CustomHandler)
+	// Module creates new Logger with the same Level and name but adds new module with name specified in first argument.
+	//
+	// Custom functions are also the same (and still updating).
 	Module(name string) Logger
+	// Fatal writes output to the console AND exits program with status 1.
 	Fatal() Option
 	Error() Option
 	Warn() Option
 	Info() Option
 	Debug() Option
-	Level(lvl Level) Logger
+	// SetLevel changes the logging Level of current Logger.
+	SetLevel(lvl Level) Logger
 }
 
 type CustomHandler func(arg interface{}) string
@@ -79,7 +93,7 @@ type logger struct {
 	showLevel Level
 }
 
-func (l *logger) Level(lvl Level) Logger {
+func (l *logger) SetLevel(lvl Level) Logger {
 	l.showLevel = lvl
 	return l
 }
@@ -130,6 +144,7 @@ func (l *logger) Fatal() Option {
 	return newOption(l, Fatal)
 }
 
+// NewLoggerWithLevel allows creating fully custom Logger.
 func NewLoggerWithLevel(name string, level Level) Logger {
 	log := new(logger)
 	log.name = name
@@ -138,10 +153,12 @@ func NewLoggerWithLevel(name string, level Level) Logger {
 	return log
 }
 
+// NewLogger creates Logger with Info logging level and custom name.
 func NewLogger(name string) Logger {
 	return NewLoggerWithLevel(name, Info)
 }
 
+// NewDefaultLogger creates Logger with Info logging level and default name - "main".
 func NewDefaultLogger() Logger {
 	return NewLoggerWithLevel("main", Info)
 }

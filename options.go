@@ -7,9 +7,15 @@ import (
 )
 
 type Option interface {
+	// Custom allows you to use previously added custom functions via Logger.AddCustom.
+	//
+	// It also uses custom functions defined by AddGlobalCustom.
 	Custom(name string, arg interface{}) Option
+	// Add allows you to easily add custom value to the output.
 	Add(value interface{}) Option
-	AddFormat(format string, values ...interface{}) Option
+	// Format adds formatted string as custom value to the output.
+	Format(format string, values ...interface{}) Option
+	// Send writes output to the stdout.
 	Send(name string, values ...interface{})
 }
 
@@ -23,7 +29,7 @@ func (n *nullOption) Add(_ interface{}) Option {
 	return n
 }
 
-func (n *nullOption) AddFormat(_ string, _ ...interface{}) Option {
+func (n *nullOption) Format(_ string, _ ...interface{}) Option {
 	return n
 }
 
@@ -66,13 +72,13 @@ func (o *option) Add(value interface{}) Option {
 	return o
 }
 
-func (o *option) AddFormat(format string, values ...interface{}) Option {
+func (o *option) Format(format string, values ...interface{}) Option {
 	o.custom = append(o.custom, fmt.Sprintf(format, values...))
 	return o
 }
 
 func (o option) Send(name string, values ...interface{}) {
-	DefaultTemplate.Execute(os.Stdout, map[string]interface{}{
+	defaultTemplate.Execute(os.Stdout, map[string]interface{}{
 		"time":    time.Now(),
 		"type":    o.level.String(),
 		"format":  name,
