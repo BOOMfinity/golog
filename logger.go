@@ -6,6 +6,8 @@ package golog
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"sync"
 	"text/template"
@@ -18,9 +20,9 @@ func AddGlobalCustom(name string, fn CustomHandler) {
 	globalCustoms.Store(name, fn)
 }
 
-// Level defines the logging level.
+// Level is used to define the logging level.
 //
-// Logger will write the output to the console only if its Level is higher or equal to the current Level of Option.
+// Logger will write the output to the console only if its Level is higher or equal to the current Level of Message.
 type Level uint8
 
 const (
@@ -68,29 +70,44 @@ var (
 )
 
 type Logger interface {
-	// AddCustom defines function that can be used by Option.Custom.
-	AddCustom(name string, fn CustomHandler)
-	// Module creates new Logger with the same Level and name but adds new module with name specified in first argument.
+	// AddCustom defines function that can be used in Message.Custom.
 	//
-	// Custom functions are also the same (and still updating).
+	// You can add unlimited number of custom functions.
+	AddCustom(name string, fn CustomHandler)
+	// Module creates new Logger with the same Level and name but adds new module that will be added to the output.
 	Module(name string) Logger
-	// Fatal writes output to the console AND exits program with status 1.
-	Fatal() Option
-	Error() Option
-	Warn() Option
-	Info() Option
-	Debug() Option
+	// SetWriter changes the output to which logs will be sent.
+	//
+	// By default, Logger sends all logs to os.Stdout.
+	SetWriter(writer io.Writer) Logger
+	// Fatal writes output to the console (or custom io.Writer) AND exits program with status 1.
+	Fatal() Message
+	Error() Message
+	Warn() Message
+	Info() Message
+	Debug() Message
 	// SetLevel changes the logging Level of current Logger.
 	SetLevel(lvl Level) Logger
 }
 
+// CustomHandler
+//
+// As arg you will get the second argument of Message.Custom function.
+//
+// There is no type checking, so you have to take care of that.
 type CustomHandler func(arg interface{}) string
 
 type logger struct {
 	name      string
+	writer    io.Writer
 	modules   []string
 	customs   *sync.Map
 	showLevel Level
+}
+
+func (l *logger) SetWriter(writer io.Writer) Logger {
+	l.writer = writer
+	return l
 }
 
 func (l *logger) SetLevel(lvl Level) Logger {
@@ -109,39 +126,39 @@ func (l *logger) Module(name string) Logger {
 	return n
 }
 
-func (l *logger) Info() Option {
+func (l *logger) Info() Message {
 	if l.showLevel < Info {
-		return &nullOption{}
+		return &nullMessage{}
 	}
-	return newOption(l, Info)
+	return newMessage(l, Info)
 }
 
-func (l *logger) Warn() Option {
+func (l *logger) Warn() Message {
 	if l.showLevel < Warning {
-		return &nullOption{}
+		return &nullMessage{}
 	}
-	return newOption(l, Warning)
+	return newMessage(l, Warning)
 }
 
-func (l *logger) Debug() Option {
+func (l *logger) Debug() Message {
 	if l.showLevel < Debug {
-		return &nullOption{}
+		return &nullMessage{}
 	}
-	return newOption(l, Debug)
+	return newMessage(l, Debug)
 }
 
-func (l *logger) Error() Option {
+func (l *logger) Error() Message {
 	if l.showLevel < Error {
-		return &nullOption{}
+		return &nullMessage{}
 	}
-	return newOption(l, Error)
+	return newMessage(l, Error)
 }
 
-func (l *logger) Fatal() Option {
+func (l *logger) Fatal() Message {
 	if l.showLevel < Fatal {
-		return &nullOption{}
+		return &nullMessage{}
 	}
-	return newOption(l, Fatal)
+	return newMessage(l, Fatal)
 }
 
 // NewLoggerWithLevel allows creating fully custom Logger.
@@ -150,6 +167,7 @@ func NewLoggerWithLevel(name string, level Level) Logger {
 	log.name = name
 	log.showLevel = level
 	log.customs = new(sync.Map)
+	log.writer = os.Stdout
 	return log
 }
 
