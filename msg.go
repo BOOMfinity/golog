@@ -2,7 +2,7 @@ package golog
 
 import (
 	"fmt"
-	"os"
+	"strings"
 	"time"
 )
 
@@ -78,16 +78,27 @@ func (o *option) Format(format string, values ...interface{}) Message {
 }
 
 func (o option) Send(name string, values ...interface{}) {
-	defaultTemplate.Execute(o.logger.writer, map[string]interface{}{
-		"time":    time.Now(),
-		"type":    o.level.String(),
-		"format":  name,
-		"values":  values,
-		"modules": o.logger.modules,
-		"customs": o.custom,
-		"name":    o.logger.name,
-	})
-	if o.level == Fatal {
-		os.Exit(1)
+	var str string
+	if len(o.logger.modules) > 0 {
+		str = fmt.Sprintf(`%v | %v | %v | %v -> %v`,
+			time.Now().Format("2006-01-02 15:04:05 (Z07:00)"), o.level.String(),
+			strings.Join(o.logger.modules, " "), strings.Join(o.custom, " | "), fmt.Sprintf(name, values...))
+	} else {
+		str = fmt.Sprintf(`%v | %v | %v -> %v`,
+			time.Now().Format("2006-01-02 15:04:05 (Z07:00)"), o.level.String(),
+			strings.Join(o.logger.modules, " "), fmt.Sprintf(name, values...))
 	}
+	if colors {
+		switch o.level {
+		case Info:
+			str = infoStyle.Sprint(str)
+		case Warning:
+			str = warningStyle.Sprint(str)
+		case Debug:
+			str = debugStyle.Sprint(str)
+		case Error, Fatal:
+			str = errorStyle.Sprint(str)
+		}
+	}
+	fmt.Fprintln(o.logger.writer, str)
 }

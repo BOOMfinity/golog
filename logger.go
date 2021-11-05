@@ -5,16 +5,27 @@
 package golog
 
 import (
-	"fmt"
 	"io"
 	"os"
-	"strings"
 	"sync"
-	"text/template"
+
+	"github.com/gookit/color"
 )
 
 // Custom functions used by all loggers in the program.
-var globalCustoms sync.Map
+var (
+	globalCustoms sync.Map
+	colors        = true
+
+	infoStyle    = color.Style{color.LightBlue}
+	warningStyle = color.Style{color.OpBold, color.Yellow}
+	debugStyle   = color.Style{color.OpItalic, color.Magenta}
+	errorStyle   = color.Style{color.OpBold, color.Red}
+)
+
+func SetColors(v bool) {
+	colors = v
+}
 
 func AddGlobalCustom(name string, fn CustomHandler) {
 	globalCustoms.Store(name, fn)
@@ -36,38 +47,18 @@ const (
 func (x Level) String() string {
 	switch x {
 	case Fatal:
-		return "[**] FATAL [**]"
+		return "FATAL"
 	case Error:
-		return "** ERROR **"
+		return "ERROR"
 	case Warning:
 		return "WARN"
 	case Info:
 		return "INFO"
 	case Debug:
-		return "* DEBUG *"
+		return "DEBUG"
 	}
 	return ""
 }
-
-var (
-	defaultTemplate, _ = template.New(`golog`).
-		Funcs(template.FuncMap{
-			"join": func(a []string, b string) string {
-				return strings.Join(a, b)
-			},
-			"sprintf": func(format string, values []interface{}) string {
-				return fmt.Sprintf(format, values...)
-			},
-			"modulesJoin": func(customs []string) (res string) {
-				for i := range customs {
-					res += "| " + customs[i]
-				}
-				return
-			},
-		}).
-		Parse(`{{ .time.Format "2006-01-02 15:04:05 (Z07:00)" }} | {{ .type }} | {{ .name }}{{if ne (len .modules) 0}} {{ join .modules " " }}{{end}}{{ if ne (len .customs) 0 }} {{ modulesJoin .customs }}{{ end }} -> {{ sprintf .format .values }}
-`)
-)
 
 type Logger interface {
 	// AddCustom defines function that can be used in Message.Custom.
@@ -167,6 +158,7 @@ func NewLoggerWithLevel(name string, level Level) Logger {
 	log.name = name
 	log.showLevel = level
 	log.customs = new(sync.Map)
+	log.modules = []string{name}
 	log.writer = os.Stdout
 	return log
 }
