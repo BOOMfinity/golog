@@ -1,4 +1,4 @@
-// Package golog is a basic logger with a few extra things like custom values / functions.
+// Package golog is a basic logger with a few extra things like custom values or functions.
 //
 // Format:
 // <time> | <level> | <name and modules> | <custom1> | <custom2> | <custom...> -> <message>
@@ -33,7 +33,7 @@ func AddGlobalCustom(name string, fn CustomHandler) {
 
 // Level is used to define the logging level.
 //
-// Logger will write the output to the console only if its Level is higher or equal to the current Level of Message.
+// Logger will output to the console only if its Level is higher or equal to the current Level of Message.
 type Level uint8
 
 const (
@@ -60,12 +60,14 @@ func (x Level) String() string {
 	return ""
 }
 
+type ExecHandler func(str string, level Level)
+
 type Logger interface {
 	// AddCustom defines function that can be used in Message.Custom.
 	//
 	// You can add unlimited number of custom functions.
 	AddCustom(name string, fn CustomHandler)
-	// Module creates new Logger with the same Level and name but adds new module that will be added to the output.
+	// Module creates new Logger with the same Level and name, but adds a new module to the output.
 	Module(name string) Logger
 	// SetWriter changes the output to which logs will be sent.
 	//
@@ -79,6 +81,7 @@ type Logger interface {
 	Debug() Message
 	// SetLevel changes the logging Level of current Logger.
 	SetLevel(lvl Level) Logger
+	OnWrite(name string, handler ExecHandler) Logger
 }
 
 // CustomHandler
@@ -89,11 +92,17 @@ type Logger interface {
 type CustomHandler func(arg interface{}) string
 
 type logger struct {
-	name      string
-	writer    io.Writer
-	modules   []string
-	customs   *sync.Map
-	showLevel Level
+	name         string
+	writer       io.Writer
+	modules      []string
+	execHandlers sync.Map
+	customs      *sync.Map
+	showLevel    Level
+}
+
+func (l *logger) OnWrite(name string, handler ExecHandler) Logger {
+	l.execHandlers.Store(name, handler)
+	return l
 }
 
 func (l *logger) SetWriter(writer io.Writer) Logger {
@@ -114,6 +123,7 @@ func (l *logger) Module(name string) Logger {
 	n := NewLoggerWithLevel(l.name, l.showLevel).(*logger)
 	n.modules = append(n.modules, name)
 	n.customs = l.customs
+	n.execHandlers = l.execHandlers
 	return n
 }
 

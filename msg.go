@@ -77,9 +77,9 @@ func (o *option) Format(format string, values ...interface{}) Message {
 	return o
 }
 
-func (o option) Send(name string, values ...interface{}) {
+func (o *option) Send(name string, values ...interface{}) {
 	var str string
-	if len(o.logger.modules) > 0 {
+	if len(o.logger.modules) > 1 {
 		str = fmt.Sprintf(`%v | %v | %v | %v -> %v`,
 			time.Now().Format("2006-01-02 15:04:05 (Z07:00)"), o.level.String(),
 			strings.Join(o.logger.modules, " "), strings.Join(o.custom, " | "), fmt.Sprintf(name, values...))
@@ -88,6 +88,10 @@ func (o option) Send(name string, values ...interface{}) {
 			time.Now().Format("2006-01-02 15:04:05 (Z07:00)"), o.level.String(),
 			strings.Join(o.logger.modules, " "), fmt.Sprintf(name, values...))
 	}
+	o.logger.execHandlers.Range(func(key, value interface{}) bool {
+		value.(ExecHandler)(str, o.level)
+		return true
+	})
 	if colors {
 		switch o.level {
 		case Info:
