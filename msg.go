@@ -79,7 +79,7 @@ func (o *option) Format(format string, values ...interface{}) Message {
 
 func (o *option) Send(name string, values ...interface{}) {
 	var str string
-	if len(o.logger.modules) > 1 {
+	if len(o.custom) > 1 {
 		str = fmt.Sprintf(`%v | %v | %v | %v -> %v`,
 			time.Now().Format("2006-01-02 15:04:05 (Z07:00)"), o.level.String(),
 			strings.Join(o.logger.modules, " "), strings.Join(o.custom, " | "), fmt.Sprintf(name, values...))
@@ -89,7 +89,11 @@ func (o *option) Send(name string, values ...interface{}) {
 			strings.Join(o.logger.modules, " "), fmt.Sprintf(name, values...))
 	}
 	o.logger.execHandlers.Range(func(key, value interface{}) bool {
-		value.(ExecHandler)(str, o.level)
+		if len(o.custom) > 1 {
+			value.(ExecHandler)(fmt.Sprintf("%v | %v -> %v", strings.Join(o.logger.modules, " "), strings.Join(o.custom, " | "), fmt.Sprintf(name, values...)), o.level)
+		} else {
+			value.(ExecHandler)(fmt.Sprintf("%v -> %v", strings.Join(o.logger.modules, " "), fmt.Sprintf(name, values...)), o.level)
+		}
 		return true
 	})
 	if colors {

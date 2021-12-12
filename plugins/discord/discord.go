@@ -27,31 +27,34 @@ func SetFooter(str string) Option {
 	}
 }
 
-func InjectDiscordHook(logger golog.Logger, id snowflake.ID, token string, level golog.Level, opts ...Option) {
+func InjectDiscordHook(logger golog.Logger, id snowflake.Snowflake, token string, level golog.Level, opts ...Option) {
 	c := new(hookContext)
 	for _, opt := range opts {
 		opt(context.WithValue(context.Background(), "$hcontext", c))
 	}
 	wh := webhook.NewClient(id, token, nil)
-	logger.OnWrite("discord", func(str string, l golog.Level) {
+	logger.OnWrite("_$discord", func(str string, l golog.Level) {
+		println(level, l)
 		if l <= level {
 			var color colors.Color
 			if l == golog.Debug {
-				color = colors.Blue
+				color = colors.Purple
 			} else if l == golog.Info {
-				color = colors.Green
+				color = colors.Blue
 			} else if l == golog.Warning {
-				color = colors.Yellow
+				color = colors.Orange
 			} else if l == golog.Error || l == golog.Fatal {
 				color = colors.Red
 			}
 			_, err := wh.Execute(discord.WebhookMessageCreateOptions{
 				MessageCreateOptions: discord.MessageCreateOptions{
-					Content: fmt.Sprintf("`%v`", str),
-					Embed: &discord.MessageEmbed{
-						Color:       color,
-						Description: fmt.Sprintf(`%v`, str),
-						Footer:      &discord.EmbedFooter{Text: c.footer},
+					Embeds: []discord.MessageEmbed{
+						{
+							Color:       color,
+							Title:       l.String(),
+							Description: fmt.Sprintf("```%v```", str),
+							Footer:      &discord.EmbedFooter{Text: c.footer},
+						},
 					},
 				},
 			})
