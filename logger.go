@@ -1,184 +1,215 @@
-// Package golog is a basic logger with a few extra things like custom values or functions.
-//
-// Format:
-// <time> | <level> | <name and modules> | <custom1> | <custom2> | <custom...> -> <message>
+// golog is simple (but fast), zero allocation logger with a few extra things like hooks, colors (Linux only)
 package golog
 
 import (
 	"io"
 	"os"
+	"runtime"
 	"sync"
-
-	"github.com/gookit/color"
 )
 
-// Custom functions used by all loggers in the program.
 var (
-	globalCustoms sync.Map
-	colors        = true
+	colorsDisabled = func() bool {
+		return os.Getenv("GLOG_COLORS") == "off" || runtime.GOOS == "windows"
+	}
 
-	infoStyle    = color.Style{color.LightBlue}
-	warningStyle = color.Style{color.OpBold, color.Yellow}
-	debugStyle   = color.Style{color.OpItalic, color.Magenta}
-	errorStyle   = color.Style{color.OpBold, color.Red}
+	forcedDebugMode = func() bool {
+		return os.Getenv("GDEBUG") == "on"
+	}
 )
 
-func SetColors(v bool) {
-	colors = v
-}
-
-func AddGlobalCustom(name string, fn CustomHandler) {
-	globalCustoms.Store(name, fn)
-}
-
-// Level is used to define the logging level.
-//
-// Logger will output to the console only if its Level is higher or equal to the current Level of Message.
+// Level determines which messages will be sent to the output
 type Level uint8
 
 const (
-	Fatal Level = iota
-	Error
-	Warning
-	Info
-	Debug
+	LevelDebug Level = iota + 1
+	LevelInfo
+	LevelWarn
+	LevelError
+	LevelFatal
 )
 
-func (x Level) String() string {
-	switch x {
-	case Fatal:
-		return "FATAL"
-	case Error:
-		return "ERROR"
-	case Warning:
-		return "WARN"
-	case Info:
-		return "INFO"
-	case Debug:
+func (l Level) String() string {
+	switch l {
+	case LevelDebug:
 		return "DEBUG"
+	case LevelInfo:
+		return "INFO"
+	case LevelWarn:
+		return "WARN"
+	case LevelError:
+		return "ERROR"
+	case LevelFatal:
+		return "FATAL"
+	default:
+		return "UNKNOWN"
 	}
-	return ""
 }
 
-type ExecHandler func(str string, level Level)
+type HookExecutor func(m Message, arg interface{})
+type WriteHookExecutor func(m Message, msg []byte, userMsg []byte)
 
 type Logger interface {
-	// AddCustom defines function that can be used in Message.Custom.
+	// GlobalHook will be added to each log message
+	GlobalHook(fn HookExecutor) Logger
+	// ClearHooks deletes all global hooks. Wow
+	ClearHooks() Logger
+	// NamedHook can be used with Message.Use
+	NamedHook(name string, fn HookExecutor) Logger
+	// RemoveNamedHook removes named hook by its name. Yes. Amazing, isn't it?
+	RemoveNamedHook(name string) Logger
+	// SetWriter allows you to specify where the logs will be delivered
+	SetWriter(w io.Writer) Logger
+	// SetLevel sets the minimum level of log messages to be sent to io.Writer
+	SetLevel(lv Level) Logger
+	// Module allows you to create new Logger instance, BUT adds module with the given name
 	//
-	// You can add unlimited number of custom functions.
-	AddCustom(name string, fn CustomHandler)
-	// Module creates new Logger with the same Level and name, but adds a new module to the output.
+	// Format: <timestamp> | <level> | <module 1> <module 2> <module 3> ...
 	Module(name string) Logger
-	// SetWriter changes the output to which logs will be sent.
+	// WriteHook
 	//
-	// By default, Logger sends all logs to os.Stdout.
-	SetWriter(writer io.Writer) Logger
-	// Fatal writes output to the console (or custom io.Writer) AND exits program with status 1.
-	Fatal() Message
-	Error() Message
-	Warn() Message
-	Info() Message
-	Debug() Message
-	// SetLevel changes the logging Level of current Logger.
-	SetLevel(lvl Level) Logger
-	OnWrite(name string, handler ExecHandler) Logger
-}
+	// Don't use them if you want to be still fast as f.
+	WriteHook(fn WriteHookExecutor) Logger
+	// ClearWriteHooks
+	//
+	// Just read Logger.ClearHooks and replace "global hooks" with "write hooks"
+	ClearWriteHooks() Logger
 
-// CustomHandler
-//
-// As arg you will get the second argument of Message.Custom function.
-//
-// There is no type checking, so you have to take care of that.
-type CustomHandler func(arg interface{}) string
+	// Info sends log message with "INFO" prefix
+	Info() Message
+	// Warn sends log message with "WARN" prefix
+	Warn() Message
+	// Debug sends log message with "DEBUG" prefix
+	Debug() Message
+	// Error sends log message with "ERROR" prefix
+	Error() Message
+	// Fatal sends log message with "FATAL" prefix and exits the program
+	Fatal() Message
+}
 
 type logger struct {
-	name         string
-	writer       io.Writer
-	modules      []string
-	execHandlers sync.Map
-	customs      *sync.Map
-	showLevel    Level
+	level      Level
+	writer     io.Writer
+	modules    []string
+	hooks      []HookExecutor
+	writeHooks []WriteHookExecutor
+	namedHooks *sync.Map
 }
 
-func (l *logger) OnWrite(name string, handler ExecHandler) Logger {
-	l.execHandlers.Store(name, handler)
+func (l *logger) WriteHook(fn WriteHookExecutor) Logger {
+	l.writeHooks = append(l.writeHooks, fn)
 	return l
 }
 
-func (l *logger) SetWriter(writer io.Writer) Logger {
-	l.writer = writer
+func (l *logger) ClearWriteHooks() Logger {
+	l.writeHooks = l.writeHooks[:0]
 	return l
-}
-
-func (l *logger) SetLevel(lvl Level) Logger {
-	l.showLevel = lvl
-	return l
-}
-
-func (l *logger) AddCustom(name string, fn CustomHandler) {
-	l.customs.Store(name, fn)
-}
-
-func (l *logger) Module(name string) Logger {
-	n := NewLoggerWithLevel(l.name, l.showLevel).(*logger)
-	n.modules = append(n.modules, name)
-	n.customs = l.customs
-	n.execHandlers = l.execHandlers
-	return n
 }
 
 func (l *logger) Info() Message {
-	if l.showLevel < Info {
-		return &nullMessage{}
+	if l.level > LevelInfo {
+		return globalNullMessage
 	}
-	return newMessage(l, Info)
+	return newMessage(l, LevelInfo)
 }
 
 func (l *logger) Warn() Message {
-	if l.showLevel < Warning {
-		return &nullMessage{}
+	if l.level > LevelWarn {
+		return globalNullMessage
 	}
-	return newMessage(l, Warning)
+	return newMessage(l, LevelWarn)
 }
 
 func (l *logger) Debug() Message {
-	if l.showLevel < Debug {
-		return &nullMessage{}
+	if l.level > LevelDebug && !forcedDebugMode() {
+		return globalNullMessage
 	}
-	return newMessage(l, Debug)
+	return newMessage(l, LevelDebug)
 }
 
 func (l *logger) Error() Message {
-	if l.showLevel < Error {
-		return &nullMessage{}
+	if l.level > LevelError {
+		return globalNullMessage
 	}
-	return newMessage(l, Error)
+	return newMessage(l, LevelError)
 }
 
 func (l *logger) Fatal() Message {
-	if l.showLevel < Fatal {
-		return &nullMessage{}
+	defer os.Exit(1)
+	if l.level > LevelFatal {
+		return globalNullMessage
 	}
-	return newMessage(l, Fatal)
+	return newMessage(l, LevelFatal)
 }
 
-// NewLoggerWithLevel allows creating fully custom Logger.
+func (l *logger) ClearNamedHooks() Logger {
+	l.namedHooks = new(sync.Map)
+	return l
+}
+
+func (l *logger) NamedHook(name string, fn HookExecutor) Logger {
+	l.namedHooks.Store(name, fn)
+	return l
+}
+
+func (l *logger) RemoveNamedHook(name string) Logger {
+	l.namedHooks.Delete(name)
+	return l
+}
+
+func (l *logger) GlobalHook(fn HookExecutor) Logger {
+	l.hooks = append(l.hooks, fn)
+	return l
+}
+
+func (l *logger) ClearHooks() Logger {
+	l.hooks = l.hooks[:0]
+	return l
+}
+
+func (l *logger) SetWriter(w io.Writer) Logger {
+	l.writer = w
+	return l
+}
+
+func (l *logger) SetLevel(lv Level) Logger {
+	l.level = lv
+	return l
+}
+
+func (l *logger) Module(name string) Logger {
+	nl := &logger{
+		modules:    append(append([]string{}, l.modules...), []string{name}...),
+		hooks:      append([]HookExecutor{}, l.hooks...),
+		writeHooks: append([]WriteHookExecutor{}, l.writeHooks...),
+		level:      l.level,
+		writer:     l.writer,
+		namedHooks: l.namedHooks,
+	}
+	return nl
+}
+
+// NewCustomLogger allows you to create FULLY CUSTOM L O G G E R, including name, level, AND WRITER
+func NewCustomLogger(name string, level Level, writer io.Writer) Logger {
+	l := new(logger)
+	l.namedHooks = new(sync.Map)
+	l.level = level
+	l.writer = writer
+	l.modules = []string{name}
+	return l
+}
+
+// NewLoggerWithLevel same as NewLogger but with custom logging level
 func NewLoggerWithLevel(name string, level Level) Logger {
-	log := new(logger)
-	log.name = name
-	log.showLevel = level
-	log.customs = new(sync.Map)
-	log.modules = []string{name}
-	log.writer = os.Stdout
-	return log
+	return NewCustomLogger(name, level, os.Stdout)
 }
 
-// NewLogger creates Logger with Info logging level and custom name.
+// NewLogger creates Logger instance with custom name but default (LevelInfo) logging level
 func NewLogger(name string) Logger {
-	return NewLoggerWithLevel(name, Info)
+	return NewLoggerWithLevel(name, LevelInfo)
 }
 
-// NewDefaultLogger creates Logger with Info logging level and default name - "main".
+// NewDefaultLogger gives you the easiest way to get new logger, but all properties are default
 func NewDefaultLogger() Logger {
-	return NewLoggerWithLevel("main", Info)
+	return NewLogger("main")
 }

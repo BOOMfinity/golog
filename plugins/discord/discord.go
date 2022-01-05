@@ -33,34 +33,34 @@ func InjectDiscordHook(logger golog.Logger, id snowflake.Snowflake, token string
 		opt(context.WithValue(context.Background(), "$hcontext", c))
 	}
 	wh := webhook.NewClient(id, token, nil)
-	logger.OnWrite("_$discord", func(str string, l golog.Level) {
-		println(level, l)
-		if l <= level {
-			var color colors.Color
-			if l == golog.Debug {
-				color = colors.Purple
-			} else if l == golog.Info {
-				color = colors.Blue
-			} else if l == golog.Warning {
-				color = colors.Orange
-			} else if l == golog.Error || l == golog.Fatal {
-				color = colors.Red
-			}
-			_, err := wh.Execute(discord.WebhookMessageCreateOptions{
-				MessageCreateOptions: discord.MessageCreateOptions{
-					Embeds: []discord.MessageEmbed{
-						{
-							Color:       color,
-							Title:       l.String(),
-							Description: fmt.Sprintf("```%v```", str),
-							Footer:      &discord.EmbedFooter{Text: c.footer},
-						},
+	logger.WriteHook(func(m golog.Message, _ []byte, ui []byte) {
+		if m.Level() > level {
+			return
+		}
+		var color colors.Color
+		if m.Level() == golog.LevelDebug {
+			color = colors.Purple
+		} else if m.Level() == golog.LevelInfo {
+			color = colors.Blue
+		} else if m.Level() == golog.LevelWarn {
+			color = colors.Orange
+		} else if m.Level() == golog.LevelError || m.Level() == golog.LevelFatal {
+			color = colors.Red
+		}
+		_, err := wh.Execute(discord.WebhookMessageCreateOptions{
+			MessageCreateOptions: discord.MessageCreateOptions{
+				Embeds: []discord.MessageEmbed{
+					{
+						Color:       color,
+						Title:       m.Level().String(),
+						Description: fmt.Sprintf("```%v```", string(ui)),
+						Footer:      &discord.EmbedFooter{Text: c.footer},
 					},
 				},
-			})
-			if err != nil {
-				panic(err)
-			}
+			},
+		})
+		if err != nil {
+			panic(err)
 		}
 	})
 }
