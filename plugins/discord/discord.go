@@ -34,7 +34,7 @@ func InjectDiscordHook(logger golog.Logger, id snowflake.Snowflake, token string
 	}
 	wh := webhook.NewClient(id, token, nil)
 	logger.WriteHook(func(m golog.Message, _ []byte, ui []byte) {
-		if m.Level() > level {
+		if m.Level() < level {
 			return
 		}
 		var color colors.Color
