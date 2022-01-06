@@ -1,18 +1,13 @@
-// golog is simple (but fast), zero allocation logger with a few extra things like hooks, colors (Linux only)
+// Package golog is simple (but fast), zero allocation logger with a few extra things like hooks, colors
 package golog
 
 import (
 	"io"
 	"os"
-	"runtime"
 	"sync"
 )
 
 var (
-	colorsDisabled = func() bool {
-		return os.Getenv("GCOLORS") == "off" || runtime.GOOS == "windows"
-	}
-
 	forcedDebugMode = func() bool {
 		return os.Getenv("GDEBUG") == "on"
 	}

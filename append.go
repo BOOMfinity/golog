@@ -9,6 +9,8 @@ import (
 	"unsafe"
 )
 
+var colorsEnabled = true
+
 var (
 	debugCode = []byte("\u001B[3m\u001B[35m")
 	infoCode  = []byte("\u001b[36m")
@@ -93,6 +95,10 @@ func appendLevel(dst []byte, level Level) []byte {
 }
 
 func appendColors(dst []byte, level Level) []byte {
+	if !colorsEnabled {
+		return dst
+	}
+
 	switch level {
 	case LevelDebug:
 		return append(dst, debugCode...)
@@ -108,6 +114,10 @@ func appendColors(dst []byte, level Level) []byte {
 }
 
 func appendReset(dst []byte) []byte {
+	if !colorsEnabled {
+		return dst
+	}
+
 	return append(dst, resetCode...)
 }
 
