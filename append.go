@@ -9,6 +9,14 @@ import (
 	"unsafe"
 )
 
+var (
+	debugCode = []byte("\\e[3m\u001b[35m")
+	infoCode  = []byte("\u001b[36m")
+	warnCode  = []byte("\u001b[1m\u001b[33m")
+	errorCode = []byte("\u001b[1m\u001b[31m")
+	resetCode = []byte("\u001B[0m")
+)
+
 func appendType(b []byte, v interface{}) []byte {
 	switch x := v.(type) {
 	case int:
@@ -87,22 +95,20 @@ func appendLevel(dst []byte, level Level) []byte {
 func appendColors(dst []byte, level Level) []byte {
 	switch level {
 	case LevelDebug:
-		return append([]byte("\\e[3m\u001b[35m"), dst...)
+		return append(dst, debugCode...)
 	case LevelInfo:
-		return append([]byte("\u001b[36m"), dst...)
+		return append(dst, infoCode...)
 	case LevelWarn:
-		return append([]byte("\u001b[1m\u001b[33m"), dst...)
-	case LevelError:
-		return append([]byte("\u001b[1m\u001b[31m"), dst...)
-	case LevelFatal:
-		return append([]byte("\u001b[1m\u001b[31m"), dst...)
+		return append(dst, warnCode...)
+	case LevelError, LevelFatal:
+		return append(dst, errorCode...)
 	default:
 		return dst
 	}
 }
 
 func appendReset(dst []byte) []byte {
-	return append(dst, []byte("\u001b[0m")...)
+	return append(dst, resetCode...)
 }
 
 func unsafeBytes(s string) []byte {

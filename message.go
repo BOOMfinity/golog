@@ -55,7 +55,7 @@ type Message interface {
 var bufferPool = &sync.Pool{
 	New: func() interface{} {
 		buf := new(bytes.Buffer)
-		buf.Grow(1536)
+		buf.Grow(512)
 		return buf
 	},
 }
@@ -64,7 +64,7 @@ var globalNullMessage = &nullMessage{}
 
 var messagePool = &sync.Pool{
 	New: func() interface{} {
-		return &message{buf: make([]byte, 0, 2048), rawBuf: make([]byte, 0, 512)}
+		return &message{buf: make([]byte, 0, 512), rawBuf: make([]byte, 0, 1024)}
 	},
 }
 
@@ -89,6 +89,7 @@ func newMessage(logger *logger, level Level) *message {
 	msg.logger = logger
 	msg.level = level
 	msg.rawBuf = msg.rawBuf[:0]
+	msg.rawBuf = appendColors(msg.rawBuf, msg.level)
 	for _, hook := range logger.hooks {
 		func() {
 			defer func() {
@@ -190,9 +191,10 @@ func (m *message) Send(format string, values ...interface{}) {
 			}
 		}()
 	}
-	m.rawBuf = appendColors(m.rawBuf, m.level)
 	m.rawBuf = appendReset(m.rawBuf)
 	m.rawBuf = append(m.rawBuf, []byte("\r\n")...)
-	m.logger.writer.Write(m.rawBuf)
+	if m.logger.writer != nil {
+		m.logger.writer.Write(m.rawBuf)
+	}
 	m.sent = true
 }
