@@ -51,14 +51,6 @@ type Message interface {
 	NoWriteHooks() Message
 }
 
-/*var bufferPool = &sync.Pool{
-	New: func() interface{} {
-		buf := new(bytes.Buffer)
-		buf.Grow(512)
-		return buf
-	},
-}*/
-
 var globalNullMessage = &nullMessage{}
 
 var messagePool = &sync.Pool{
@@ -68,22 +60,6 @@ var messagePool = &sync.Pool{
 		return &message{buf: &buf, rawBuf: &rawBuf}
 	},
 }
-
-/*func init() {
-	for i := 0; i < 10; i++ {
-		putBuffer(bytes.NewBuffer(make([]byte, 0, 512)))
-	}
-	for i := 0; i < 10; i++ {
-		putMessage(&message{})
-	}
-}*/
-
-/*func putBuffer(x *bytes.Buffer) {
-	if x.Cap() > 512 {
-		return
-	}
-	bufferPool.Put(x)
-}*/
 
 func putMessage(x *message) {
 	if x.buf.Len() > 1024 {

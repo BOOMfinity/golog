@@ -80,15 +80,6 @@ func appendType(b *WritableBuffer, v interface{}) WritableBuffer {
 	}
 }
 
-/*func appendFormat(dest []byte, format string, values ...interface{}) []byte {
-	x := bufferPool.Get().(*bytes.Buffer)
-	x.Reset()
-	defer putBuffer(x)
-	_, _ = fmt.Fprintf(x, format, values...)
-	return append(dest, x.Bytes()...)
-}*/
-
-// AppendTime appends a time.Time to a slice of bytes
 func appendTime(dst *WritableBuffer, t time.Time, format string) []byte {
 	if format == "" {
 		return appendType(dst, t.UnixNano()/1000000)
