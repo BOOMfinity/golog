@@ -10,7 +10,7 @@ import (
 
 var (
 	colorsDisabled = func() bool {
-		return os.Getenv("GLOG_COLORS") == "off" || runtime.GOOS == "windows"
+		return os.Getenv("GCOLORS") == "off" || runtime.GOOS == "windows"
 	}
 
 	forcedDebugMode = func() bool {
