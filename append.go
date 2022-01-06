@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	debugCode = []byte("\\e[3m\u001b[35m")
+	debugCode = []byte("\u001B[3m\u001B[35m")
 	infoCode  = []byte("\u001b[36m")
 	warnCode  = []byte("\u001b[1m\u001b[33m")
 	errorCode = []byte("\u001b[1m\u001b[31m")
