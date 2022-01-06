@@ -1,7 +1,6 @@
 package golog
 
 import (
-	"bytes"
 	"fmt"
 	"sync"
 	"time"
@@ -52,31 +51,42 @@ type Message interface {
 	NoWriteHooks() Message
 }
 
-var bufferPool = &sync.Pool{
+/*var bufferPool = &sync.Pool{
 	New: func() interface{} {
 		buf := new(bytes.Buffer)
 		buf.Grow(512)
 		return buf
 	},
-}
+}*/
 
 var globalNullMessage = &nullMessage{}
 
 var messagePool = &sync.Pool{
 	New: func() interface{} {
-		return &message{buf: make([]byte, 0, 512), rawBuf: make([]byte, 0, 1024)}
+		buf := make(WritableBuffer, 0, 512)
+		rawBuf := make(WritableBuffer, 0, 1024)
+		return &message{buf: &buf, rawBuf: &rawBuf}
 	},
 }
 
-func putBuffer(x *bytes.Buffer) {
-	if x.Cap() > 1536 {
+/*func init() {
+	for i := 0; i < 10; i++ {
+		putBuffer(bytes.NewBuffer(make([]byte, 0, 512)))
+	}
+	for i := 0; i < 10; i++ {
+		putMessage(&message{})
+	}
+}*/
+
+/*func putBuffer(x *bytes.Buffer) {
+	if x.Cap() > 512 {
 		return
 	}
 	bufferPool.Put(x)
-}
+}*/
 
 func putMessage(x *message) {
-	if len(x.buf) > 2048 {
+	if x.buf.Len() > 1024 {
 		return
 	}
 	messagePool.Put(x)
@@ -85,11 +95,11 @@ func putMessage(x *message) {
 func newMessage(logger *logger, level Level) *message {
 	msg := messagePool.Get().(*message)
 	msg.sent = false
-	msg.buf = msg.buf[:0]
+	msg.buf.Reset()
 	msg.logger = logger
 	msg.level = level
-	msg.rawBuf = msg.rawBuf[:0]
-	msg.rawBuf = appendColors(msg.rawBuf, msg.level)
+	msg.rawBuf.Reset()
+	*msg.rawBuf = appendColors(*msg.rawBuf, msg.level)
 	for _, hook := range logger.hooks {
 		func() {
 			defer func() {
@@ -112,8 +122,8 @@ func newMessage(logger *logger, level Level) *message {
 
 type message struct {
 	logger       *logger
-	buf          []byte
-	rawBuf       []byte
+	buf          *WritableBuffer
+	rawBuf       *WritableBuffer
 	level        Level
 	sent         bool
 	noWriteHooks bool
@@ -145,8 +155,8 @@ func (m *message) Use(name string, arg interface{}) Message {
 }
 
 func (m *message) Str(str string) Message {
-	m.buf = appendType(m.buf, " | ")
-	m.buf = append(m.buf, unsafeBytes(str)...)
+	*m.buf = appendType(m.buf, " | ")
+	*m.buf = append(*m.buf, unsafeBytes(str)...)
 	return m
 }
 
@@ -159,8 +169,8 @@ func (m *message) Any(v interface{}) Message {
 }
 
 func (m *message) Fmt(format string, values ...interface{}) Message {
-	m.buf = appendType(m.buf, " | ")
-	m.buf = appendFormat(m.buf, format, values...)
+	*m.buf = appendType(m.buf, " | ")
+	_, _ = fmt.Fprintf(m.buf, format, values...)
 	return m
 }
 
@@ -169,32 +179,32 @@ func (m *message) Send(format string, values ...interface{}) {
 		panic("You cannot use the same message type many times")
 	}
 	defer putMessage(m)
-	m.rawBuf = appendTime(m.rawBuf, time.Now(), "2006-01-02 15:04:05")
-	m.rawBuf = appendType(m.rawBuf, " | ")
-	m.rawBuf = appendLevel(m.rawBuf, m.level)
-	m.rawBuf = appendType(m.rawBuf, " | ")
+	*m.rawBuf = appendTime(m.rawBuf, time.Now(), "2006-01-02 15:04:05")
+	*m.rawBuf = appendType(m.rawBuf, " | ")
+	*m.rawBuf = appendLevel(*m.rawBuf, m.level)
+	*m.rawBuf = appendType(m.rawBuf, " | ")
 	for i := range m.logger.modules {
-		m.rawBuf = append(m.rawBuf, unsafeBytes(m.logger.modules[i])...)
+		*m.rawBuf = append(*m.rawBuf, unsafeBytes(m.logger.modules[i])...)
 		if i < len(m.logger.modules)-1 {
-			m.rawBuf = appendType(m.rawBuf, " ")
+			*m.rawBuf = appendType(m.rawBuf, " ")
 		}
 	}
-	m.rawBuf = append(m.rawBuf, m.buf...)
-	m.rawBuf = appendType(m.rawBuf, " -> ")
-	m.rawBuf = appendFormat(m.rawBuf, format, values...)
+	*m.rawBuf = append(*m.rawBuf, (*m.buf)...)
+	*m.rawBuf = appendType(m.rawBuf, " -> ")
+	fmt.Fprintf(m.rawBuf, format, values...)
 	if !m.noWriteHooks && len(m.logger.writeHooks) > 0 {
-		strBuf := make([]byte, 0, 1024)
-		str := appendFormat(strBuf, format, values...)
+		strBuf := make(WritableBuffer, 0, 1024)
+		fmt.Fprintf(&strBuf, format, values...)
 		func() {
 			for _, hook := range m.logger.writeHooks {
-				hook(m, m.rawBuf, str)
+				hook(m, *m.rawBuf, strBuf)
 			}
 		}()
 	}
-	m.rawBuf = appendReset(m.rawBuf)
-	m.rawBuf = append(m.rawBuf, []byte("\r\n")...)
+	*m.rawBuf = appendReset(*m.rawBuf)
+	*m.rawBuf = append(*m.rawBuf, []byte("\r\n")...)
 	if m.logger.writer != nil {
-		m.logger.writer.Write(m.rawBuf)
+		m.logger.writer.Write(*m.rawBuf)
 	}
 	m.sent = true
 }

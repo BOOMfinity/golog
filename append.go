@@ -1,7 +1,6 @@
 package golog
 
 import (
-	"bytes"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -19,62 +18,82 @@ var (
 	resetCode = []byte("\u001B[0m")
 )
 
-func appendType(b []byte, v interface{}) []byte {
+type WritableBuffer []byte
+
+func (w *WritableBuffer) Reset() {
+	*w = (*w)[:0]
+}
+
+func (w *WritableBuffer) Len() int {
+	return len(*w)
+}
+
+func (w *WritableBuffer) Cap() int {
+	return cap(*w)
+}
+
+func (w *WritableBuffer) Write(p []byte) (n int, err error) {
+	*w = append(*w, p...)
+	return len(p), nil
+}
+
+func appendType(b *WritableBuffer, v interface{}) WritableBuffer {
 	switch x := v.(type) {
 	case int:
-		return strconv.AppendInt(b, int64(x), 10)
+		return strconv.AppendInt(*b, int64(x), 10)
 	case int8:
-		return strconv.AppendInt(b, int64(x), 10)
+		return strconv.AppendInt(*b, int64(x), 10)
 	case int16:
-		return strconv.AppendInt(b, int64(x), 10)
+		return strconv.AppendInt(*b, int64(x), 10)
 	case int32:
-		return strconv.AppendInt(b, int64(x), 10)
+		return strconv.AppendInt(*b, int64(x), 10)
 	case int64:
-		return strconv.AppendInt(b, x, 10)
+		return strconv.AppendInt(*b, x, 10)
 	case uint:
-		return strconv.AppendInt(b, int64(x), 10)
+		return strconv.AppendInt(*b, int64(x), 10)
 	case uint8:
-		return strconv.AppendInt(b, int64(x), 10)
+		return strconv.AppendInt(*b, int64(x), 10)
 	case uint16:
-		return strconv.AppendInt(b, int64(x), 10)
+		return strconv.AppendInt(*b, int64(x), 10)
 	case uint32:
-		return strconv.AppendInt(b, int64(x), 10)
+		return strconv.AppendInt(*b, int64(x), 10)
 	case uint64:
-		return strconv.AppendInt(b, int64(x), 10)
+		return strconv.AppendInt(*b, int64(x), 10)
 	case float32:
-		return strconv.AppendFloat(b, float64(x), 'f', -1, 32)
+		return strconv.AppendFloat(*b, float64(x), 'f', -1, 32)
 	case float64:
-		return strconv.AppendFloat(b, x, 'f', -1, 64)
+		return strconv.AppendFloat(*b, x, 'f', -1, 64)
 	case string:
-		return append(b, []byte(v.(string))...)
+		return append(*b, unsafeBytes(x)...)
 	case error:
-		return append(b, []byte(v.(error).Error())...)
+		return append(*b, []byte(v.(error).Error())...)
 	case []byte:
-		return append(b, v.([]byte)...)
+		return append(*b, v.([]byte)...)
 	case bool:
 		if v.(bool) {
-			return append(b, []byte("true")...)
+			return append(*b, []byte("true")...)
 		}
-		return append(b, []byte("false")...)
+		return append(*b, []byte("false")...)
 	default:
-		return appendFormat(b, "%v", v)
+		_, _ = fmt.Fprintf(b, "%v", v)
+		return *b
 	}
 }
 
-func appendFormat(dest []byte, format string, values ...interface{}) []byte {
+/*func appendFormat(dest []byte, format string, values ...interface{}) []byte {
 	x := bufferPool.Get().(*bytes.Buffer)
 	x.Reset()
 	defer putBuffer(x)
 	_, _ = fmt.Fprintf(x, format, values...)
 	return append(dest, x.Bytes()...)
-}
+}*/
 
 // AppendTime appends a time.Time to a slice of bytes
-func appendTime(dst []byte, t time.Time, format string) []byte {
+func appendTime(dst *WritableBuffer, t time.Time, format string) []byte {
 	if format == "" {
 		return appendType(dst, t.UnixNano()/1000000)
 	}
-	return t.AppendFormat(dst, format)
+	return t.AppendFormat(*dst, format)
 }
 
 func appendLevel(dst []byte, level Level) []byte {
