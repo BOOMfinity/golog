@@ -13,7 +13,6 @@ require (
 require (
 	github.com/BOOMfinity-Developers/encoding v0.2.8-0.20210124124221-eb39950b45cd // indirect
 	github.com/andybalholm/brotli v1.0.1 // indirect
-	github.com/gookit/color v1.5.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/klauspost/compress v1.13.5 // indirect
 	github.com/logrusorgru/aurora/v3 v3.0.0 // indirect
@@ -24,6 +23,5 @@ require (
 	github.com/segmentio/encoding v0.2.7 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.23.0 // indirect
-	github.com/xo/terminfo v0.0.0-20210125001918-ca9a967f8778 // indirect
-	golang.org/x/sys v0.0.0-20210330210617-4fbd30eecc44 // indirect
+	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e // indirect
 )

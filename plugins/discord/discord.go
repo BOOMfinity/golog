@@ -33,7 +33,7 @@ func InjectDiscordHook(logger golog.Logger, id snowflake.Snowflake, token string
 		opt(context.WithValue(context.Background(), "$hcontext", c))
 	}
 	wh := webhook.NewClient(id, token, nil)
-	logger.WriteHook(func(m golog.Message, _ []byte, ui []byte) {
+	logger.WriteHook(func(m *golog.Message, _ []byte, ui []byte) {
 		if m.Level() < level {
 			return
 		}
