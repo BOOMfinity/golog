@@ -6,70 +6,24 @@ import (
 	"time"
 )
 
-type nullMessage struct{}
-
-func (n *nullMessage) Str(str string) Message {
-	return n
-}
-
-func (n *nullMessage) Any(v interface{}) Message {
-	return n
-}
-
-func (n *nullMessage) Level() Level {
-	return 0
-}
-
-func (n *nullMessage) Fmt(format string, values ...interface{}) Message {
-	return n
-}
-
-func (n *nullMessage) Use(name string, arg interface{}) Message {
-	return n
-}
-
-func (n *nullMessage) NoWriteHooks() Message {
-	return n
-}
-
-func (n *nullMessage) Send(format string, values ...interface{}) {}
-
-type Message interface {
-	// Str adds string to the output
-	Str(str string) Message
-	// Any accepts any type and adds it to the output
-	Any(v interface{}) Message
-	// Fmt adds formatted string to the output
-	Fmt(format string, values ...interface{}) Message
-	// Use executes named hook declared with Logger.NamedHook
-	Use(name string, arg interface{}) Message
-	// Send writes output to the Logger io.Writer
-	Send(format string, values ...interface{})
-	// Level returns level of the log message
-	Level() Level
-	// NoWriteHooks disables write hooks for this Message
-	NoWriteHooks() Message
-}
-
-var globalNullMessage = &nullMessage{}
-
 var messagePool = &sync.Pool{
 	New: func() interface{} {
 		buf := make(WritableBuffer, 0, 512)
 		rawBuf := make(WritableBuffer, 0, 1024)
-		return &message{buf: &buf, rawBuf: &rawBuf}
+		return &Message{buf: &buf, rawBuf: &rawBuf}
 	},
 }
 
-func putMessage(x *message) {
+func putMessage(x *Message) {
 	if x.buf.Len() > 1024 {
 		return
 	}
 	messagePool.Put(x)
 }
 
-func newMessage(logger *logger, level Level) *message {
-	msg := messagePool.Get().(*message)
+func newMessage(logger *Logger, level Level) *Message {
+	msg := messagePool.Get().(*Message)
+	msg.empty = level < logger.level
 	msg.sent = false
 	msg.buf.Reset()
 	msg.logger = logger
@@ -96,8 +50,9 @@ func newMessage(logger *logger, level Level) *message {
 	return msg
 }
 
-type message struct {
-	logger       *logger
+type Message struct {
+	empty        bool
+	logger       *Logger
 	buf          *WritableBuffer
 	rawBuf       *WritableBuffer
 	level        Level
@@ -105,12 +60,20 @@ type message struct {
 	noWriteHooks bool
 }
 
-func (m *message) NoWriteHooks() Message {
+// NoWriteHooks disables write hooks for this Message
+func (m *Message) NoWriteHooks() *Message {
+	if m.empty {
+		return m
+	}
 	m.noWriteHooks = true
 	return m
 }
 
-func (m *message) Use(name string, arg interface{}) Message {
+// Use executes named hook declared with Logger.NamedHook
+func (m *Message) Use(name string, arg interface{}) *Message {
+	if m.empty {
+		return m
+	}
 	if _hook, ok := m.logger.namedHooks.Load(name); ok {
 		defer func() {
 			if err := recover(); err != nil {
@@ -130,27 +93,44 @@ func (m *message) Use(name string, arg interface{}) Message {
 	return m
 }
 
-func (m *message) Str(str string) Message {
+// Str adds string to the output
+func (m *Message) Str(str string) *Message {
+	if m.empty {
+		return m
+	}
 	*m.buf = appendType(m.buf, " | ")
 	*m.buf = append(*m.buf, unsafeBytes(str)...)
 	return m
 }
 
-func (m *message) Level() Level {
+// Level returns level of the log message
+func (m *Message) Level() Level {
 	return m.level
 }
 
-func (m *message) Any(v interface{}) Message {
+// Any accepts any type and adds it to the output
+func (m *Message) Any(v interface{}) *Message {
+	if m.empty {
+		return m
+	}
 	return m.Fmt("%v", v)
 }
 
-func (m *message) Fmt(format string, values ...interface{}) Message {
+// Fmt adds formatted string to the output
+func (m *Message) Fmt(format string, values ...interface{}) *Message {
+	if m.empty {
+		return m
+	}
 	*m.buf = appendType(m.buf, " | ")
 	_, _ = fmt.Fprintf(m.buf, format, values...)
 	return m
 }
 
-func (m *message) Send(format string, values ...interface{}) {
+// Send writes output to the Logger io.Writer
+func (m *Message) Send(format string, values ...interface{}) {
+	if m.empty {
+		return
+	}
 	if m.sent {
 		panic("You cannot use the same message type many times")
 	}

@@ -41,48 +41,10 @@ func (l Level) String() string {
 	}
 }
 
-type HookExecutor func(m Message, arg interface{})
-type WriteHookExecutor func(m Message, msg []byte, userMsg []byte)
+type HookExecutor func(m *Message, arg interface{})
+type WriteHookExecutor func(m *Message, msg []byte, userMsg []byte)
 
-type Logger interface {
-	// GlobalHook will be added to each log message
-	GlobalHook(fn HookExecutor) Logger
-	// ClearHooks deletes all global hooks. Wow
-	ClearHooks() Logger
-	// NamedHook can be used with Message.Use
-	NamedHook(name string, fn HookExecutor) Logger
-	// RemoveNamedHook removes named hook by its name. Yes. Amazing, isn't it?
-	RemoveNamedHook(name string) Logger
-	// SetWriter allows you to specify where the logs will be delivered
-	SetWriter(w io.Writer) Logger
-	// SetLevel sets the minimum level of log messages to be sent to io.Writer
-	SetLevel(lv Level) Logger
-	// Module allows you to create new Logger instance, BUT adds module with the given name
-	//
-	// Format: <timestamp> | <level> | <module 1> <module 2> <module 3> ...
-	Module(name string) Logger
-	// WriteHook
-	//
-	// Don't use them if you want to be still fast as f.
-	WriteHook(fn WriteHookExecutor) Logger
-	// ClearWriteHooks
-	//
-	// Just read Logger.ClearHooks and replace "global hooks" with "write hooks"
-	ClearWriteHooks() Logger
-
-	// Info sends log message with "INFO" prefix
-	Info() Message
-	// Warn sends log message with "WARN" prefix
-	Warn() Message
-	// Debug sends log message with "DEBUG" prefix
-	Debug() Message
-	// Error sends log message with "ERROR" prefix
-	Error() Message
-	// Fatal sends log message with "FATAL" prefix and exits the program
-	Fatal() Message
-}
-
-type logger struct {
+type Logger struct {
 	level      Level
 	writer     io.Writer
 	modules    []string
@@ -91,89 +53,95 @@ type logger struct {
 	namedHooks *sync.Map
 }
 
-func (l *logger) WriteHook(fn WriteHookExecutor) Logger {
+// WriteHook
+//
+// Don't use them if you want to be still fast as f.
+func (l *Logger) WriteHook(fn WriteHookExecutor) *Logger {
 	l.writeHooks = append(l.writeHooks, fn)
 	return l
 }
 
-func (l *logger) ClearWriteHooks() Logger {
+// ClearWriteHooks
+//
+// Just read Logger.ClearHooks and replace "global hooks" with "write hooks"
+func (l *Logger) ClearWriteHooks() *Logger {
 	l.writeHooks = l.writeHooks[:0]
 	return l
 }
 
-func (l *logger) Info() Message {
-	if l.level > LevelInfo {
-		return globalNullMessage
-	}
+// Info sends log message with "INFO" prefix
+func (l *Logger) Info() *Message {
 	return newMessage(l, LevelInfo)
 }
 
-func (l *logger) Warn() Message {
-	if l.level > LevelWarn {
-		return globalNullMessage
-	}
+// Warn sends log message with "WARN" prefix
+func (l *Logger) Warn() *Message {
 	return newMessage(l, LevelWarn)
 }
 
-func (l *logger) Debug() Message {
-	if l.level > LevelDebug && !forcedDebugMode() {
-		return globalNullMessage
-	}
+// Debug sends log message with "DEBUG" prefix
+func (l *Logger) Debug() *Message {
 	return newMessage(l, LevelDebug)
 }
 
-func (l *logger) Error() Message {
-	if l.level > LevelError {
-		return globalNullMessage
-	}
+// Error sends log message with "ERROR" prefix
+func (l *Logger) Error() *Message {
 	return newMessage(l, LevelError)
 }
 
-func (l *logger) Fatal() Message {
-	defer os.Exit(1)
-	if l.level > LevelFatal {
-		return globalNullMessage
-	}
+// Fatal sends log message with "FATAL" prefix and exits the program
+func (l *Logger) Fatal() *Message {
 	return newMessage(l, LevelFatal)
 }
 
-func (l *logger) ClearNamedHooks() Logger {
-	l.namedHooks = new(sync.Map)
-	return l
-}
-
-func (l *logger) NamedHook(name string, fn HookExecutor) Logger {
+// NamedHook can be used with Message.Use
+func (l *Logger) NamedHook(name string, fn HookExecutor) *Logger {
 	l.namedHooks.Store(name, fn)
 	return l
 }
 
-func (l *logger) RemoveNamedHook(name string) Logger {
+// RemoveNamedHook removes named hook by its name. Yes. Amazing, isn't it?
+func (l *Logger) RemoveNamedHook(name string) *Logger {
 	l.namedHooks.Delete(name)
 	return l
 }
 
-func (l *logger) GlobalHook(fn HookExecutor) Logger {
+// GlobalHook will be added to each log message
+func (l *Logger) GlobalHook(fn HookExecutor) *Logger {
 	l.hooks = append(l.hooks, fn)
 	return l
 }
 
-func (l *logger) ClearHooks() Logger {
+// ClearHooks deletes all global hooks. Wow
+func (l *Logger) ClearHooks() *Logger {
 	l.hooks = l.hooks[:0]
 	return l
 }
 
-func (l *logger) SetWriter(w io.Writer) Logger {
+var empty = []byte("\r\n")
+
+// EmptyLine prints an empty line
+func (l *Logger) EmptyLine() {
+	_, _ = l.writer.Write(empty)
+}
+
+// SetWriter allows you to specify where the logs will be delivered
+func (l *Logger) SetWriter(w io.Writer) *Logger {
 	l.writer = w
 	return l
 }
 
-func (l *logger) SetLevel(lv Level) Logger {
+// SetLevel sets the minimum level of log messages to be sent to io.Writer
+func (l *Logger) SetLevel(lv Level) *Logger {
 	l.level = lv
 	return l
 }
 
-func (l *logger) Module(name string) Logger {
-	nl := &logger{
+// Module allows you to create new Logger instance, BUT adds module with the given name
+//
+// Format: <timestamp> | <level> | <module 1> <module 2> <module 3> ...
+func (l *Logger) Module(name string) *Logger {
+	nl := &Logger{
 		modules:    append(append([]string{}, l.modules...), []string{name}...),
 		hooks:      append([]HookExecutor{}, l.hooks...),
 		writeHooks: append([]WriteHookExecutor{}, l.writeHooks...),
@@ -185,8 +153,8 @@ func (l *logger) Module(name string) Logger {
 }
 
 // NewCustomLogger allows you to create FULLY CUSTOM L O G G E R, including name, level, AND WRITER
-func NewCustomLogger(name string, level Level, writer io.Writer) Logger {
-	l := new(logger)
+func NewCustomLogger(name string, level Level, writer io.Writer) *Logger {
+	l := new(Logger)
 	l.namedHooks = new(sync.Map)
 	l.level = level
 	l.writer = writer
@@ -195,16 +163,16 @@ func NewCustomLogger(name string, level Level, writer io.Writer) Logger {
 }
 
 // NewLoggerWithLevel same as NewLogger but with custom logging level
-func NewLoggerWithLevel(name string, level Level) Logger {
+func NewLoggerWithLevel(name string, level Level) *Logger {
 	return NewCustomLogger(name, level, os.Stdout)
 }
 
 // NewLogger creates Logger instance with custom name but default (LevelInfo) logging level
-func NewLogger(name string) Logger {
+func NewLogger(name string) *Logger {
 	return NewLoggerWithLevel(name, LevelInfo)
 }
 
 // NewDefaultLogger gives you the easiest way to get new logger, but all properties are default
-func NewDefaultLogger() Logger {
+func NewDefaultLogger() *Logger {
 	return NewLogger("main")
 }
