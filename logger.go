@@ -21,7 +21,6 @@ const (
 	LevelInfo
 	LevelWarn
 	LevelError
-	LevelFatal
 )
 
 func (l Level) String() string {
@@ -34,8 +33,6 @@ func (l Level) String() string {
 		return "WARN"
 	case LevelError:
 		return "ERROR"
-	case LevelFatal:
-		return "FATAL"
 	default:
 		return "UNKNOWN"
 	}
@@ -87,11 +84,6 @@ func (l *Logger) Debug() *Message {
 // Error sends log message with "ERROR" prefix
 func (l *Logger) Error() *Message {
 	return newMessage(l, LevelError)
-}
-
-// Fatal sends log message with "FATAL" prefix and exits the program
-func (l *Logger) Fatal() *Message {
-	return newMessage(l, LevelFatal)
 }
 
 // NamedHook can be used with Message.Use

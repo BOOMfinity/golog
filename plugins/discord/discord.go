@@ -44,7 +44,7 @@ func InjectDiscordHook(logger golog.Logger, id snowflake.Snowflake, token string
 			color = colors.Blue
 		} else if m.Level() == golog.LevelWarn {
 			color = colors.Orange
-		} else if m.Level() == golog.LevelError || m.Level() == golog.LevelFatal {
+		} else if m.Level() == golog.LevelError {
 			color = colors.Red
 		}
 		_, err := wh.Execute(discord.WebhookMessageCreateOptions{

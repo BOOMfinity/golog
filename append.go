@@ -97,8 +97,6 @@ func appendLevel(dst []byte, level Level) []byte {
 		return append(dst, []byte("WARN")...)
 	case LevelError:
 		return append(dst, []byte("ERROR")...)
-	case LevelFatal:
-		return append(dst, []byte("FATAL")...)
 	default:
 		return append(dst, []byte("UNKNOWN")...)
 	}
@@ -116,7 +114,7 @@ func appendColors(dst []byte, level Level) []byte {
 		return append(dst, infoCode...)
 	case LevelWarn:
 		return append(dst, warnCode...)
-	case LevelError, LevelFatal:
+	case LevelError:
 		return append(dst, errorCode...)
 	default:
 		return dst
