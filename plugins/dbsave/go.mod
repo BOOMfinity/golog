@@ -1,4 +1,4 @@
-module golog-db
+module github.com/VenomPCPL/golog/plugins/dbsave
 
 go 1.18
 
