@@ -1,4 +1,4 @@
-package golog_db
+package dbsave
 
 import (
 	"github.com/VenomPCPL/golog"
