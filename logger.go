@@ -4,6 +4,7 @@ package golog
 import (
 	"io"
 	"os"
+	"runtime"
 	"sync"
 )
 
@@ -142,6 +143,22 @@ func (l *Logger) Module(name string) *Logger {
 		namedHooks: l.namedHooks,
 	}
 	return nl
+}
+
+// Stack returns stack of current goroutine
+func (l *Logger) Stack() (data []byte, ok bool) {
+	data = make([]byte, 1024*5)
+	ok = runtime.Stack(data, false) != 0
+	return
+}
+
+// Recover function can be used for default panic handling
+//
+// Uses predefined template that cannot be changed
+func (l *Logger) Recover() {
+	if v := recover(); v != nil {
+		l.Error().FileWithLine().Stack().Send("%v", v)
+	}
 }
 
 // NewCustomLogger allows you to create FULLY CUSTOM L O G G E R, including name, level, AND WRITER
