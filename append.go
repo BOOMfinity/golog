@@ -20,6 +20,13 @@ var (
 
 type WritableBuffer []byte
 
+func (w *WritableBuffer) Fill(b byte) {
+	w.Reset()
+	for i := 0; i < w.Cap(); i++ {
+		(*w) = append((*w), b)
+	}
+}
+
 func (w *WritableBuffer) Reset() {
 	*w = (*w)[:0]
 }

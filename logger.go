@@ -157,7 +157,7 @@ func (l *Logger) Stack() (data []byte, ok bool) {
 // Uses predefined template that cannot be changed
 func (l *Logger) Recover() {
 	if v := recover(); v != nil {
-		l.Error().FileWithLine().Stack().Send("%v", v)
+		l.Error().Stack().Send("%v", v)
 	}
 }
 

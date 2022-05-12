@@ -7,18 +7,12 @@ import (
 	"time"
 )
 
-var buffPool = &sync.Pool{
-	New: func() interface{} {
-		d := make([]byte, 2048)
-		return &d
-	},
-}
-
 var messagePool = &sync.Pool{
 	New: func() interface{} {
 		buf := make(WritableBuffer, 0, 512)
 		rawBuf := make(WritableBuffer, 0, 1024)
-		return &Message{buf: &buf, rawBuf: &rawBuf}
+		stack := make(WritableBuffer, 2048)
+		return &Message{buf: &buf, rawBuf: &rawBuf, stack: &stack}
 	},
 }
 
@@ -26,20 +20,15 @@ func putMessage(x *Message) {
 	if x.buf.Len() > 1024 {
 		return
 	}
-	buffPool.Put(x.stack)
-	x.stack = nil
 	messagePool.Put(x)
-}
-
-func newBuffer() *[]byte {
-	return buffPool.Get().(*[]byte)
 }
 
 func newMessage(logger *Logger, level Level) *Message {
 	msg := messagePool.Get().(*Message)
 	msg.empty = level < logger.level
 	msg.sent = false
-	msg.stack = nil
+	msg.stack.Reset()
+	msg.sendStack = false
 	msg.buf.Reset()
 	msg.logger = logger
 	msg.level = level
@@ -70,7 +59,7 @@ type Message struct {
 	logger       *Logger
 	buf          *WritableBuffer
 	rawBuf       *WritableBuffer
-	stack        *[]byte
+	stack        *WritableBuffer
 	level        Level
 	sent         bool
 	sendStack    bool
@@ -79,7 +68,7 @@ type Message struct {
 
 // FileWithLine adds file and line where THIS function was used
 func (m *Message) FileWithLine() *Message {
-	_, file, line, ok := runtime.Caller(4)
+	_, file, line, ok := runtime.Caller(1)
 	if ok {
 		m.Fmt("%v:%v", file, line)
 	}
@@ -87,23 +76,17 @@ func (m *Message) FileWithLine() *Message {
 }
 
 func (m *Message) GetStack() []byte {
-	if len(*m.stack) == 0 {
-		m.allocStack()
-	}
+	m.stack.Fill(0)
+	runtime.Stack(*m.stack, false)
 	return *m.stack
-}
-
-func (m *Message) allocStack() {
-	buf := newBuffer()
-	m.stack = buf
-	runtime.Stack(*buf, false)
 }
 
 // Stack prints stack trace of current goroutine
 //
 // Printed stack will be sent as uncolored text under log message
 func (m *Message) Stack() *Message {
-	m.allocStack()
+	m.stack.Fill(0)
+	runtime.Stack(*m.stack, false)
 	m.sendStack = true
 	return m
 }
@@ -176,13 +159,13 @@ func (m *Message) Fmt(format string, values ...interface{}) *Message {
 
 // Send writes output to the Logger io.Writer
 func (m *Message) Send(format string, values ...interface{}) {
+	defer putMessage(m)
 	if m.empty {
 		return
 	}
 	if m.sent {
 		panic("You cannot use the same message type many times")
 	}
-	defer putMessage(m)
 	*m.rawBuf = appendTime(m.rawBuf, time.Now(), "2006-01-02 15:04:05")
 	*m.rawBuf = appendType(m.rawBuf, " | ")
 	*m.rawBuf = appendLevel(*m.rawBuf, m.level)
@@ -209,7 +192,7 @@ func (m *Message) Send(format string, values ...interface{}) {
 	*m.rawBuf = append(*m.rawBuf, []byte("\r\n")...)
 	if m.logger.writer != nil {
 		m.logger.writer.Write(*m.rawBuf)
-		if m.sendStack && len(*m.stack) > 0 {
+		if m.sendStack && m.stack.Len() > 0 {
 			m.logger.writer.Write(append(*m.stack, []byte("\r\n")...))
 		}
 	}
