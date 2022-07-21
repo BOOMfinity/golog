@@ -27,7 +27,7 @@ func SetFooter(str string) Option {
 	}
 }
 
-func InjectDiscordHook(logger golog.Logger, id snowflake.Snowflake, token string, level golog.Level, opts ...Option) {
+func InjectDiscordHook(logger *golog.Logger, id snowflake.Snowflake, token string, level golog.Level, opts ...Option) {
 	c := new(hookContext)
 	for _, opt := range opts {
 		opt(context.WithValue(context.Background(), "$hcontext", c))
