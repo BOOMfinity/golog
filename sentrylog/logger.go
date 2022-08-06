@@ -18,6 +18,8 @@ func handleSentry(level golog.Level) golog.LogHandler {
 			} else {
 				sentry.CaptureException(errors.New(msg.UserMessage()))
 			}
+		} else {
+			sentry.CaptureMessage(msg.UserMessage())
 		}
 	}
 }
