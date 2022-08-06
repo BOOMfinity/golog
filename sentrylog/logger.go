@@ -25,7 +25,7 @@ func handleSentry(level golog.Level) golog.LogHandler {
 }
 
 func UpgradeWithLevel(log golog.Logger, level golog.Level) golog.Logger {
-	l := &logger{Logger: log}
+	l := &logger{Logger: log, lvl: level}
 	l.AddOnLog("$S_E_N_T_R_Y$", handleSentry(level))
 	return l
 }
@@ -36,6 +36,7 @@ func Upgrade(log golog.Logger) golog.Logger {
 
 type logger struct {
 	golog.Logger
+	lvl golog.Level
 }
 
 func (l *logger) Recover() {
@@ -51,5 +52,5 @@ func (l *logger) Recover() {
 }
 
 func (l *logger) Module(name string) golog.Logger {
-	return Upgrade(l.Logger.Module(name))
+	return UpgradeWithLevel(l.Logger.Module(name), l.lvl)
 }
