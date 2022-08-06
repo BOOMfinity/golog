@@ -1,6 +1,6 @@
 # golog
 
-## Simple and fast zero allocation logger with a few extra things like hooks, colors
+## Simple, zero allocation logger with colors (and sentry integration)!
 
 ## Example:
 

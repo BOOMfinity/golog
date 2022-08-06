@@ -1,200 +1,243 @@
 package golog
 
 import (
+	"bytes"
 	"fmt"
+	"github.com/VenomPCPL/golog/internal"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
-var messagePool = &sync.Pool{
-	New: func() interface{} {
-		buf := make(WritableBuffer, 0, 512)
-		rawBuf := make(WritableBuffer, 0, 1024)
-		stack := make(WritableBuffer, 2048)
-		return &Message{buf: &buf, rawBuf: &rawBuf, stack: &stack}
-	},
-}
+var colorsEnabled = true
 
-func putMessage(x *Message) {
-	if x.buf.Len() > 1024 {
-		return
+var (
+	debugCode = []byte("\u001B[3m\u001B[35m")
+	infoCode  = []byte("\u001b[36m")
+	warnCode  = []byte("\u001b[1m\u001b[33m")
+	errorCode = []byte("\u001b[1m\u001b[31m")
+	resetCode = []byte("\u001B[0m")
+)
+
+func internalRecover() {
+	if err := recover(); err != nil {
+		println("=================================")
+		println()
+		println("GOLOG - INTERNAL PANIC")
+		println()
+		println(fmt.Sprintf("%s", err))
+		println()
+		println("=================================")
 	}
-	messagePool.Put(x)
 }
 
-func newMessage(logger *Logger, level Level) *Message {
-	msg := messagePool.Get().(*Message)
-	msg.empty = level < logger.level
-	msg.sent = false
-	msg.stack.Reset()
-	msg.sendStack = false
-	msg.buf.Reset()
-	msg.logger = logger
+const messageBufferSize = 1024
+const stackBufferSize = 2048
+const timestampFormat = "02.01.2006 15:04:05"
+
+var (
+	_messageBuffPool = sync.Pool{
+		New: func() any {
+			return bytes.NewBuffer(make([]byte, 0, messageBufferSize))
+		},
+	}
+	_stackBuffPool = sync.Pool{
+		New: func() any {
+			return bytes.NewBuffer(make([]byte, 0, stackBufferSize))
+		},
+	}
+	_messagePool = sync.Pool{
+		New: func() any {
+			return &message{
+				buff:      make([]byte, 0, messageBufferSize),
+				stack:     make([]byte, stackBufferSize),
+				offset:    new(atomic.Uint64),
+				arguments: make([]string, 0, 16),
+			}
+		},
+	}
+)
+
+func getMessage(log Logger, level Level) *message {
+	msg := _messagePool.Get().(*message)
+	msg.empty = level > log.Level()
+	msg.instance = log
 	msg.level = level
-	msg.rawBuf.Reset()
-	*msg.rawBuf = appendColors(*msg.rawBuf, msg.level)
-	for _, hook := range logger.hooks {
-		func() {
-			defer func() {
-				if err := recover(); err != nil {
-					println()
-					println("=======================")
-					println()
-					println("Recovered panic: Hooks")
-					println()
-					println(fmt.Print(err))
-					println()
-					println()
-				}
-			}()
-			hook(msg, nil)
-		}()
-	}
+	msg.buff = msg.buff[:0]
+	msg.sendStack = false
+	msg.stack = msg.stack[:cap(msg.stack)]
+	msg.arguments = msg.arguments[:0]
+	msg.offset.Store(0)
+	msg.userMessage = ""
+	msg.time = time.Now()
+	msg.err = nil
 	return msg
 }
 
-type Message struct {
-	empty        bool
-	logger       *Logger
-	buf          *WritableBuffer
-	rawBuf       *WritableBuffer
-	stack        *WritableBuffer
-	level        Level
-	sent         bool
-	sendStack    bool
-	noWriteHooks bool
-}
-
-// FileWithLine adds file and line where THIS function was used
-func (m *Message) FileWithLine() *Message {
-	_, file, line, ok := runtime.Caller(1)
-	if ok {
-		m.Fmt("%v:%v", file, line)
+func freeMessage(msg *message) {
+	if cap(msg.buff) > messageBufferSize {
+		msg.buff = nil
+		msg.buff = make([]byte, 0, messageBufferSize)
 	}
-	return m
+	if cap(msg.stack) > stackBufferSize {
+		msg.stack = nil
+		msg.stack = make([]byte, stackBufferSize)
+	}
+	_messagePool.Put(msg)
 }
 
-func (m *Message) GetStack() []byte {
-	m.stack.Fill(0)
-	runtime.Stack(*m.stack, false)
-	return *m.stack
+type message struct {
+	empty       bool
+	instance    Logger
+	level       Level
+	arguments   []string
+	userMessage string
+	time        time.Time
+	stack       []byte
+	buff        []byte
+	offset      *atomic.Uint64
+	sendStack   bool
+	err         error
 }
 
-// Stack prints stack trace of current goroutine
-//
-// Printed stack will be sent as uncolored text under log message
-func (m *Message) Stack() *Message {
-	m.stack.Fill(0)
-	runtime.Stack(*m.stack, false)
+func (m *message) Error() error {
+	return m.err
+}
+
+func (m *message) SendError(err error) {
+	m.err = err
+	m.Stack().Send("%s", err)
+}
+
+func (m *message) Stack() Message {
+	m.stack = m.GetStack()
 	m.sendStack = true
 	return m
 }
 
-// NoWriteHooks disables write hooks for this Message
-func (m *Message) NoWriteHooks() *Message {
-	if m.empty {
-		return m
-	}
-	m.noWriteHooks = true
-	return m
+func (m *message) GetStack() []byte {
+	m.stack = m.stack[:cap(m.stack)]
+	written := runtime.Stack(m.stack, false)
+	m.stack = m.stack[:written]
+	return m.stack
 }
 
-// Use executes named hook declared with Logger.NamedHook
-func (m *Message) Use(name string, arg interface{}) *Message {
-	if m.empty {
-		return m
-	}
-	if _hook, ok := m.logger.namedHooks.Load(name); ok {
-		defer func() {
-			if err := recover(); err != nil {
-				println()
-				println("=======================")
-				println()
-				println("Recovered panic: Hooks")
-				println()
-				println(fmt.Print(err))
-				println()
-				println()
-			}
-		}()
-		hook := _hook.(HookExecutor)
-		hook(m, arg)
+func (m *message) FileWithLine() Message {
+	_, file, line, ok := runtime.Caller(1)
+	if ok {
+		m.Add("%v:%v", file, line)
 	}
 	return m
 }
 
-// Str adds string to the output
-func (m *Message) Str(str string) *Message {
-	if m.empty {
-		return m
-	}
-	*m.buf = appendType(m.buf, " | ")
-	*m.buf = append(*m.buf, unsafeBytes(str)...)
-	return m
+func (m *message) Instance() Logger {
+	return m.instance
 }
 
-// Level returns level of the log message
-func (m *Message) Level() Level {
+func (m *message) Level() Level {
 	return m.level
 }
 
-// Any accepts any type and adds it to the output
-func (m *Message) Any(v interface{}) *Message {
-	if m.empty {
-		return m
-	}
-	return m.Fmt("%v", v)
+func (m *message) Arguments() []string {
+	return m.arguments
 }
 
-// Fmt adds formatted string to the output
-func (m *Message) Fmt(format string, values ...interface{}) *Message {
+func (m *message) UserMessage() string {
+	return m.userMessage
+}
+
+func (m *message) Time() time.Time {
+	return m.time
+}
+
+func (m *message) Use(hook string, arg any) Message {
 	if m.empty {
 		return m
 	}
-	*m.buf = appendType(m.buf, " | ")
-	_, _ = fmt.Fprintf(m.buf, format, values...)
+	defer internalRecover()
+	if fn := m.Instance().Hook(hook); fn != nil {
+		fn(m, arg)
+	}
 	return m
 }
 
-// Send writes output to the Logger io.Writer
-func (m *Message) Send(format string, values ...interface{}) {
-	defer putMessage(m)
+func (m *message) insSep() {
+	m.buff = append(m.buff, ' ', '|', ' ')
+}
+
+func (m *message) Any(args ...any) Message {
+	if m.empty {
+		return m
+	}
+	for i := range args {
+		m.arguments = append(m.arguments, fmt.Sprint(args[i]))
+	}
+	return m
+}
+
+func (m *message) Add(format string, args ...any) Message {
+	if m.empty {
+		return m
+	}
+	m.arguments = append(m.arguments, fmt.Sprintf(format, args...))
+	return m
+}
+
+func (m *message) Send(format string, args ...any) {
+	defer internalRecover()
+	defer freeMessage(m)
 	if m.empty {
 		return
 	}
-	if m.sent {
-		panic("You cannot use the same message type many times")
-	}
-	*m.rawBuf = appendTime(m.rawBuf, time.Now(), "2006-01-02 15:04:05")
-	*m.rawBuf = appendType(m.rawBuf, " | ")
-	*m.rawBuf = appendLevel(*m.rawBuf, m.level)
-	*m.rawBuf = appendType(m.rawBuf, " | ")
-	for i := range m.logger.modules {
-		*m.rawBuf = append(*m.rawBuf, unsafeBytes(m.logger.modules[i])...)
-		if i < len(m.logger.modules)-1 {
-			*m.rawBuf = appendType(m.rawBuf, " ")
+	if colorsEnabled {
+		switch m.level {
+		case LevelInfo:
+			m.buff = append(m.buff, infoCode...)
+		case LevelDebug:
+			m.buff = append(m.buff, debugCode...)
+		case LevelError:
+			m.buff = append(m.buff, errorCode...)
+		case LevelWarn:
+			m.buff = append(m.buff, warnCode...)
 		}
 	}
-	*m.rawBuf = append(*m.rawBuf, (*m.buf)...)
-	*m.rawBuf = appendType(m.rawBuf, " -> ")
-	fmt.Fprintf(m.rawBuf, format, values...)
-	if !m.noWriteHooks && len(m.logger.writeHooks) > 0 {
-		strBuf := make(WritableBuffer, 0, 1024)
-		fmt.Fprintf(&strBuf, format, values...)
-		func() {
-			for _, hook := range m.logger.writeHooks {
-				hook(m, *m.rawBuf, strBuf)
+	m.buff = m.time.AppendFormat(m.buff, timestampFormat)
+	m.insSep()
+	m.buff = append(m.buff, internal.GetBytes(m.level.String())...)
+	m.insSep()
+	for i := range m.Instance().Modules() {
+		if i != 0 {
+			m.buff = append(m.buff, ' ')
+		}
+		m.buff = append(m.buff, internal.GetBytes(m.Instance().Modules()[i])...)
+	}
+	if len(m.arguments) != 0 {
+		m.insSep()
+		for i := range m.arguments {
+			if i != 0 {
+				m.insSep()
 			}
-		}()
-	}
-	*m.rawBuf = appendReset(*m.rawBuf)
-	*m.rawBuf = append(*m.rawBuf, []byte("\r\n")...)
-	if m.logger.writer != nil {
-		m.logger.writer.Write(*m.rawBuf)
-		if m.sendStack && m.stack.Len() > 0 {
-			m.logger.writer.Write(append(*m.stack, []byte("\r\n")...))
+			m.buff = append(m.buff, internal.GetBytes(m.arguments[i])...)
 		}
 	}
-	m.sent = true
+	m.buff = append(m.buff, ' ', '-', '>', ' ')
+	offset := len(m.buff)
+	m.buff = fmt.Appendf(m.buff, format, args...)
+	m.userMessage = internal.ToString(m.buff[offset:len(m.buff)])
+	m.buff = append(m.buff, resetCode...)
+	if m.Instance().Writer() != nil {
+		m.buff = append(m.buff, '\r', '\n')
+		_, _ = m.Instance().Writer().Write(m.buff)
+		if m.sendStack {
+			if cap(m.stack)+2 > stackBufferSize {
+				m.stack = append(m.stack, '\r', '\n')
+			} else {
+				m.stack[len(m.stack)] = '\r'
+				m.stack[len(m.stack)+1] = '\n'
+			}
+			_, _ = m.Instance().Writer().Write(m.stack)
+		}
+	}
+	m.Instance().OnLog(m)
 }
