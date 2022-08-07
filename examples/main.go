@@ -23,7 +23,8 @@ func main() {
 	users.Info().Send("users info msg")
 	users.Warn().Send("users warn msg")
 	users.Error().Send("users error msg")
-	users.Panic().SendError(io.ErrUnexpectedEOF)
-	users.Fatal().Any(4).Send("failed to fetch user: %s", io.ErrUnexpectedEOF)
+	users.Panic().Send("test panic")
+	users.Panic().SendError(io.ErrClosedPipe)
+	users.Panic().Send("test panic: %s", io.ErrUnexpectedEOF)
 	log.Empty()
 }
