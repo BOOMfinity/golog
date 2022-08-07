@@ -1,12 +1,11 @@
 package golog
 
 import (
-	"bytes"
 	"fmt"
 	"github.com/VenomPCPL/golog/internal"
+	"os"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -37,22 +36,11 @@ const stackBufferSize = 2048
 const timestampFormat = "02.01.2006 15:04:05"
 
 var (
-	_messageBuffPool = sync.Pool{
-		New: func() any {
-			return bytes.NewBuffer(make([]byte, 0, messageBufferSize))
-		},
-	}
-	_stackBuffPool = sync.Pool{
-		New: func() any {
-			return bytes.NewBuffer(make([]byte, 0, stackBufferSize))
-		},
-	}
 	_messagePool = sync.Pool{
 		New: func() any {
 			return &message{
 				buff:      make([]byte, 0, messageBufferSize),
 				stack:     make([]byte, stackBufferSize),
-				offset:    new(atomic.Uint64),
 				arguments: make([]string, 0, 16),
 			}
 		},
@@ -68,10 +56,10 @@ func getMessage(log Logger, level Level) *message {
 	msg.sendStack = false
 	msg.stack = msg.stack[:cap(msg.stack)]
 	msg.arguments = msg.arguments[:0]
-	msg.offset.Store(0)
 	msg.userMessage = ""
 	msg.time = time.Now()
 	msg.err = nil
+	msg.code = -1
 	return msg
 }
 
@@ -96,9 +84,22 @@ type message struct {
 	time        time.Time
 	stack       []byte
 	buff        []byte
-	offset      *atomic.Uint64
 	sendStack   bool
 	err         error
+	code        int
+}
+
+func (m *message) GetExitCode() int {
+	return m.code
+}
+
+func (m *message) fatal() FatalMessage {
+	return m
+}
+
+func (m *message) ExitCode(code int) Message {
+	m.code = code
+	return m
 }
 
 func (m *message) Error() error {
@@ -196,11 +197,15 @@ func (m *message) Send(format string, args ...any) {
 			m.buff = append(m.buff, infoCode...)
 		case LevelDebug:
 			m.buff = append(m.buff, debugCode...)
-		case LevelError:
+		case LevelError, LevelPanic:
 			m.buff = append(m.buff, errorCode...)
 		case LevelWarn:
 			m.buff = append(m.buff, warnCode...)
 		}
+	}
+	if m.level == LevelPanic {
+		m.buff = append(m.buff, '\r', '\n')
+		m.buff = append(m.buff, '!', '!', ' ', ' ')
 	}
 	m.buff = m.time.AppendFormat(m.buff, timestampFormat)
 	m.insSep()
@@ -225,7 +230,13 @@ func (m *message) Send(format string, args ...any) {
 	offset := len(m.buff)
 	m.buff = fmt.Appendf(m.buff, format, args...)
 	m.userMessage = internal.ToString(m.buff[offset:len(m.buff)])
-	m.buff = append(m.buff, resetCode...)
+	if m.level == LevelPanic {
+		m.buff = append(m.buff, ' ', ' ', '!', '!')
+		m.buff = append(m.buff, '\r', '\n')
+	}
+	if colorsEnabled {
+		m.buff = append(m.buff, resetCode...)
+	}
 	if m.Instance().Writer() != nil {
 		m.buff = append(m.buff, '\r', '\n')
 		_, _ = m.Instance().Writer().Write(m.buff)
@@ -240,4 +251,7 @@ func (m *message) Send(format string, args ...any) {
 		}
 	}
 	m.Instance().OnLog(m)
+	if m.code != -1 {
+		os.Exit(m.code)
+	}
 }

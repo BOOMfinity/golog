@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/VenomPCPL/golog"
 	"github.com/getsentry/sentry-go"
+	"strings"
 	"time"
 )
 
@@ -12,14 +13,33 @@ func handleSentry(level golog.Level) golog.LogHandler {
 		if msg.Level() > level {
 			return
 		}
-		if msg.Level() == golog.LevelError {
+		if msg.Level() == golog.LevelError || msg.Level() == golog.LevelPanic {
 			if msg.Error() != nil {
 				sentry.CaptureException(msg.Error())
 			} else {
 				sentry.CaptureException(errors.New(msg.UserMessage()))
 			}
+			if msg.GetExitCode() != -1 {
+				sentry.Flush(10 * time.Second)
+			}
 		} else {
-			sentry.CaptureMessage(msg.UserMessage())
+			ev := sentry.NewEvent()
+			switch msg.Level() {
+			case golog.LevelError:
+				ev.Level = sentry.LevelError
+			case golog.LevelPanic:
+				ev.Level = sentry.LevelFatal
+			case golog.LevelInfo:
+				ev.Level = sentry.LevelInfo
+			case golog.LevelWarn:
+				ev.Level = sentry.LevelWarning
+			case golog.LevelDebug:
+				ev.Level = sentry.LevelDebug
+			}
+			ev.Message = msg.UserMessage()
+			ev.Extra["logger_path"] = strings.Join(msg.Instance().Modules()[:], " -> ")
+			ev.Extra["arguments"] = strings.Join(msg.Arguments()[:], " : ")
+			sentry.CaptureEvent(ev)
 		}
 	}
 }

@@ -8,7 +8,8 @@ import (
 type Level uint8
 
 const (
-	LevelError Level = iota + 1
+	LevelPanic Level = iota + 1
+	LevelError
 	LevelWarn
 	LevelInfo
 	LevelDebug
@@ -16,6 +17,8 @@ const (
 
 func (l Level) String() string {
 	switch l {
+	case LevelPanic:
+		return "PANIC"
 	case LevelError:
 		return "ERROR"
 	case LevelInfo:
@@ -36,6 +39,14 @@ type Logger interface {
 	Warn() Message
 	Error() Message
 	Debug() Message
+	// Panic is a special log message type with extra decorations.
+	//
+	// By default, it doesn't exit process.
+	Panic() FatalMessage
+	// Fatal is wrapper for Logger.Panic that exits process after sending log message.
+	//
+	// Default exit code is 1.
+	Fatal() FatalMessage
 	Empty()
 
 	Module(name string) Logger
@@ -66,6 +77,7 @@ type Message interface {
 	UserMessage() string
 	Time() time.Time
 	Error() error
+	GetExitCode() int
 
 	Stack() Message
 	GetStack() []byte
@@ -76,4 +88,11 @@ type Message interface {
 	Any(arg ...any) Message
 	Add(format string, args ...any) Message
 	Send(format string, args ...any)
+
+	fatal() FatalMessage
+}
+
+type FatalMessage interface {
+	Message
+	ExitCode(code int) Message
 }

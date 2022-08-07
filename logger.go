@@ -13,6 +13,14 @@ type logger struct {
 	logHandlers *map[string]LogHandler
 }
 
+func (l *logger) Panic() FatalMessage {
+	return getMessage(l, LevelPanic).Stack().fatal()
+}
+
+func (l *logger) Fatal() FatalMessage {
+	return l.Panic().ExitCode(1).fatal()
+}
+
 func (l *logger) Empty() {
 	_, _ = l.writer.Write([]byte("\r\n"))
 }
@@ -111,13 +119,16 @@ func New(name string) Logger {
 }
 
 func NewWithLevel(name string, level Level) Logger {
-	return &logger{
+	log := &logger{
 		writer:      os.Stdout,
 		hooks:       new(map[string]HookHandler),
 		logHandlers: new(map[string]LogHandler),
 		modules:     []string{name},
 		level:       level,
 	}
+	*log.hooks = map[string]HookHandler{}
+	*log.logHandlers = map[string]LogHandler{}
+	return log
 }
 
 func NewDefault() Logger {

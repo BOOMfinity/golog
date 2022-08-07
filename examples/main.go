@@ -1,6 +1,9 @@
 package main
 
-import "github.com/VenomPCPL/golog"
+import (
+	"github.com/VenomPCPL/golog"
+	"io"
+)
 
 func main() {
 	log := golog.NewDefault().SetLevel(golog.LevelDebug)
@@ -20,5 +23,7 @@ func main() {
 	users.Info().Send("users info msg")
 	users.Warn().Send("users warn msg")
 	users.Error().Send("users error msg")
+	users.Panic().SendError(io.ErrUnexpectedEOF)
+	users.Fatal().Any(4).Send("failed to fetch user: %s", io.ErrUnexpectedEOF)
 	log.Empty()
 }
