@@ -2,7 +2,7 @@ package golog
 
 import (
 	"fmt"
-	"github.com/VenomPCPL/golog/internal"
+	"github.com/BOOMfinity/golog/internal"
 	"os"
 	"runtime"
 	"sync"

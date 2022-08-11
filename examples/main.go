@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/VenomPCPL/golog"
+	"github.com/BOOMfinity/golog"
 	"io"
 )
 
