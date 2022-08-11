@@ -1,4 +1,4 @@
-module github.com/VenomPCPL/golog
+module github.com/BOOMfinity/golog
 
 go 1.18
 
