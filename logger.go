@@ -1,6 +1,7 @@
 package golog
 
 import (
+	"github.com/BOOMfinity/golog/internal"
 	"io"
 	"os"
 )
@@ -76,6 +77,9 @@ func (l *logger) Debug() Message {
 }
 
 func (l *logger) Module(name string) Logger {
+	if internal.IsDebugEnabled() {
+		l.level = LevelDebug
+	}
 	return &logger{
 		level:       l.level,
 		writer:      l.writer,
@@ -119,6 +123,9 @@ func New(name string) Logger {
 }
 
 func NewWithLevel(name string, level Level) Logger {
+	if internal.IsDebugEnabled() {
+		level = LevelDebug
+	}
 	log := &logger{
 		writer:      os.Stdout,
 		hooks:       new(map[string]HookHandler),

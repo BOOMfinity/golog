@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	if os.Getenv("GCOLORS") == "off" {
+	if os.Getenv("GOLOG_COLORS_DISABLED") == "off" {
 		colorsEnabled = false
 		return
 	}
