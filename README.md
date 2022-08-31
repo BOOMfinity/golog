@@ -5,23 +5,23 @@
 The main golog features are:
 - **Zero**(1) allocations
 - Color support (also on windows!)
-- Debug mode that can be enabled via environment variable
+- Debug mode controllable via environment variable
 - Looks good(2)
 - **Modules** thanks to which you know where the logs come from
-- **Arguments** that can be set for each log message independently
-- **Hooks** which can be used to add specific information to every log message that use hook with the same name
+- **Arguments** configurable for each log message independently
+- **Hooks** which add specific information to every log message that uses a hook with the same name
 - **Sentry** and **Discord** integration (via plugins)
 - Built-in panic recovery function
 - File path with line and stack trace support
 - Potential for many integrations and plugins
 
-We also plan to add PostgreSQL (and maybe mongodb) integration with dashboard.
+We also plan to add PostgreSQL (and maybe MongoDB) integration with a dashboard.
 
 _(1) - **IT IS** zero allocation logger if you don't use many arguments or specific formatting. Internally it does not make any allocation._
 
 _(2) - We don't provide any way to change message style or colors_
 
-Most of the methods and types are not documented as we hope they are very simple and their names say everything.
+Most methods and types are not documented as they are pretty straightforward - their names say everything.
 
 Installation
 ---

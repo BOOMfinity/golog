@@ -2,4 +2,4 @@ module github.com/BOOMfinity/golog
 
 go 1.18
 
-require golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e
+require golang.org/x/sys v0.0.0-20220829200755-d48e67d00261
