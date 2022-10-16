@@ -21,11 +21,13 @@ var (
 
 func internalRecover() {
 	if err := recover(); err != nil {
+		stack := make([]byte, 1024*8)
+		runtime.Stack(stack, false)
 		println("=================================")
 		println()
 		println("GOLOG - INTERNAL PANIC")
 		println()
-		println(fmt.Sprintf("%s", err))
+		println(string(stack))
 		println()
 		println("=================================")
 	}
@@ -212,6 +214,9 @@ func (m *message) Send(format string, args ...any) {
 	m.buff = append(m.buff, internal.GetBytes(m.level.String())...)
 	m.insSep()
 	for i := range m.Instance().Modules() {
+		if len(m.Instance().Modules()[i]) == 0 {
+			continue
+		}
 		if i != 0 {
 			m.buff = append(m.buff, ' ')
 		}
@@ -220,6 +225,9 @@ func (m *message) Send(format string, args ...any) {
 	if len(m.arguments) != 0 {
 		m.insSep()
 		for i := range m.arguments {
+			if len(m.arguments[i]) == 0 {
+				continue
+			}
 			if i != 0 {
 				m.insSep()
 			}
