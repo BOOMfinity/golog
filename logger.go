@@ -80,12 +80,14 @@ func (l *logger) Module(name string) Logger {
 	if internal.IsDebugEnabled() {
 		l.level = LevelDebug
 	}
+	modules := make([]string, len(l.modules)+1)
+	copy(modules, l.modules)
 	return &logger{
 		level:       l.level,
 		writer:      l.writer,
 		hooks:       l.hooks,
 		logHandlers: l.logHandlers,
-		modules:     append(l.modules, name),
+		modules:     append(modules, name),
 	}
 }
 
