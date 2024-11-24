@@ -1,145 +1,192 @@
 package golog
 
 import (
-	"github.com/BOOMfinity/golog/internal"
-	"io"
-	"os"
+	"strings"
+	"sync"
+
+	"github.com/BOOMfinity/go-utils/inlineif"
 )
 
-type logger struct {
-	writer      io.Writer
-	modules     []string
-	hooks       *map[string]HookHandler
-	level       Level
-	logHandlers *map[string]LogHandler
+type LoggerInternal interface {
+	Params() Params
+	Level() Level
+	Module() string
+	Scope() string
+	Parent() Logger
+	Engine() WriteEngine
 }
 
-func (l *logger) Panic() FatalMessage {
-	return getMessage(l, LevelPanic).Stack().fatal()
+type Logger interface {
+	Internal() LoggerInfo
+	Param(name string, value any) Logger
+	Level(l Level) Logger
+	// Module creates Copy of Logger instance with given module name.
+	//
+	// It also resets scope and params.
+	Module(name string) Logger
+	// Scope helps you find where in code the log message was sent.
+	//
+	// It does not create Copy of Logger instance, so you can reuse the same log instance or create Copy manually.
+	Scope(name string) Logger
+	Copy() Logger
+	ResetScope() Logger
+	ResetParams() Logger
+	// Recover should be used with defer. It prints error message when code panics and prevents program from exiting.
+	//
+	// You can use RecoverParams to customize method's behavior.
+	Recover(params ...RecoverParams)
+
+	Info() Message
+	Debug() Message
+	Warn() Message
+	Error() Message
+	Trace() Message
+	Fatal(exitCode int) Message
 }
 
-func (l *logger) Fatal() FatalMessage {
-	return l.Panic().ExitCode(1).fatal()
+type LoggerInfo struct {
+	Level  Level
+	Module string
+	Scope  string
+	Parent Logger
+	Params Params
+	Engine WriteEngine
 }
 
-func (l *logger) Empty() {
-	_, _ = l.writer.Write([]byte("\r\n"))
+type loggerImpl struct {
+	eng  WriteEngine
+	info LoggerInfo
 }
 
-func (l *logger) ClearHooks() Logger {
-	l.hooks = new(map[string]HookHandler)
+func (l *loggerImpl) ResetScope() Logger {
+	l.info.Scope = ""
 	return l
 }
 
-func (l *logger) ClearAll() Logger {
-	l.ClearHooks()
-	l.ClearHandlers()
+func (l *loggerImpl) ResetParams() Logger {
+	clear(l.info.Params)
 	return l
 }
 
-func (l *logger) ClearHandlers() Logger {
-	l.logHandlers = new(map[string]LogHandler)
+func (l *loggerImpl) Internal() LoggerInfo {
+	return l.info
+}
+
+func (l *loggerImpl) Param(name string, value any) Logger {
+	arr := paramsPool.Get()
+	(*arr)[0] = name
+	(*arr)[1] = value
+	l.info.Params = append(l.info.Params, arr)
 	return l
 }
 
-func (l *logger) Level() Level {
-	return l.level
+func (l *loggerImpl) Level(lvl Level) Logger {
+	l.info.Level = inlineif.IfElse(overrideLoggingLevel != "", levelFromString(overrideLoggingLevel), lvl)
+	return l
 }
 
-func (l *logger) Writer() io.Writer {
-	return l.writer
+func (l *loggerImpl) Module(name string) Logger {
+	cpy := l.doCopy()
+	cpy.info.Module = name
+	cpy.info.Scope = ""
+	cpy.info.Parent = l
+	cpy.info.Params = make(Params, 0, 25)
+	return cpy
 }
 
-func (l *logger) Hook(name string) HookHandler {
-	return (*l.hooks)[name]
+func (l *loggerImpl) Scope(name string) Logger {
+	l.info.Scope = name
+	return l
 }
 
-func (l *logger) Recover() {
-	if err := recover(); err != nil {
-		l.Error().Any("!! PANIC !!").Stack().Send("%v", err)
+func (l *loggerImpl) doCopy() *loggerImpl {
+	dst := make(Params, len(l.info.Params), 25)
+	copy(dst, l.info.Params)
+	return &loggerImpl{
+		eng: l.eng,
+		info: LoggerInfo{
+			Level:  l.info.Level,
+			Module: strings.Clone(l.info.Module),
+			Scope:  strings.Clone(l.info.Scope),
+			Parent: l.info.Parent,
+			Params: dst,
+			Engine: l.info.Engine,
+		},
 	}
 }
 
-func (l *logger) Info() Message {
-	return getMessage(l, LevelInfo)
+func (l *loggerImpl) Copy() Logger {
+	return l.doCopy()
 }
 
-func (l *logger) Warn() Message {
-	return getMessage(l, LevelWarn)
+func (l *loggerImpl) Info() Message {
+	return newMessage(l, LevelInfo)
 }
 
-func (l *logger) Error() Message {
-	return getMessage(l, LevelError)
+func (l *loggerImpl) Debug() Message {
+	return newMessage(l, LevelDebug)
 }
 
-func (l *logger) Debug() Message {
-	return getMessage(l, LevelDebug)
+func (l *loggerImpl) Trace() Message {
+	return newMessage(l, LevelTrace)
 }
 
-func (l *logger) Module(name string) Logger {
-	if internal.IsDebugEnabled() {
-		l.level = LevelDebug
-	}
-	modules := make([]string, len(l.modules)+1)
-	copy(modules, l.modules)
-	return &logger{
-		level:       l.level,
-		writer:      l.writer,
-		hooks:       l.hooks,
-		logHandlers: l.logHandlers,
-		modules:     append(modules, name),
-	}
+func (l *loggerImpl) Warn() Message {
+	return newMessage(l, LevelWarning)
 }
 
-func (l *logger) Modules() []string {
-	return l.modules
+func (l *loggerImpl) Error() Message {
+	return newErrorMessage(l)
 }
 
-func (l *logger) SetLevel(level Level) Logger {
-	l.level = level
-	return l
+func (l *loggerImpl) Fatal(exitCode int) Message {
+	return newErrorMessage(l, exitCode)
 }
 
-func (l *logger) SetWriter(wr io.Writer) Logger {
-	l.writer = wr
-	return l
+type Pool interface {
+	Get() Logger
+	Put(l Logger)
 }
 
-func (l *logger) OnLog(msg Message) {
-	for i := range *l.logHandlers {
-		(*l.logHandlers)[i](msg)
-	}
+type poolImpl struct {
+	loggers *sync.Pool
 }
 
-func (l *logger) AddOnLog(id string, fn LogHandler) Logger {
-	(*l.logHandlers)[id] = fn
-	return l
+func (s poolImpl) Get() Logger {
+	return s.loggers.Get().(Logger)
 }
 
-func (l *logger) CreateHook(name string, fn HookHandler) {
-	(*l.hooks)[name] = fn
+func (s poolImpl) Put(l Logger) {
+	l.ResetScope()
+	l.ResetParams()
+	s.loggers.Put(l)
 }
 
 func New(name string) Logger {
-	return NewWithLevel(name, LevelInfo)
+	return newLogger(name, NewColorEngine())
 }
 
-func NewWithLevel(name string, level Level) Logger {
-	if internal.IsDebugEnabled() {
-		level = LevelDebug
-	}
-	log := &logger{
-		writer:      os.Stdout,
-		hooks:       new(map[string]HookHandler),
-		logHandlers: new(map[string]LogHandler),
-		modules:     []string{name},
-		level:       level,
-	}
-	*log.hooks = map[string]HookHandler{}
-	*log.logHandlers = map[string]LogHandler{}
+func newLogger(name string, eng WriteEngine) *loggerImpl {
+	log := new(loggerImpl)
+	log.info = LoggerInfo{}
+	log.info.Level = inlineif.IfElse(overrideLoggingLevel != "", levelFromString(overrideLoggingLevel), LevelInfo)
+	log.info.Module = name
+	log.info.Parent = nil
+	log.info.Params = make(Params, 0, 25)
+	log.info.Engine = eng
 	return log
 }
 
-func NewDefault() Logger {
-	return New("app")
+func NewCustom(name string, eng WriteEngine) Logger {
+	return newLogger(name, eng)
+}
+
+func NewPool(base Logger) Pool {
+	return poolImpl{
+		loggers: &sync.Pool{
+			New: func() any {
+				return base.Copy()
+			},
+		},
+	}
 }

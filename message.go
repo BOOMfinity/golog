@@ -2,264 +2,181 @@ package golog
 
 import (
 	"fmt"
-	"github.com/BOOMfinity/golog/internal"
-	"os"
 	"runtime"
-	"sync"
+	"strings"
 	"time"
+
+	"github.com/BOOMfinity/go-utils/gpool"
+	"github.com/BOOMfinity/go-utils/inlineif"
 )
 
-var colorsEnabled = true
+type Level uint
 
-var (
-	debugCode = []byte("\u001B[3m\u001B[35m")
-	infoCode  = []byte("\u001b[36m")
-	warnCode  = []byte("\u001b[1m\u001b[33m")
-	errorCode = []byte("\u001b[1m\u001b[31m")
-	resetCode = []byte("\u001B[0m")
+const (
+	LevelPanic Level = iota + 1
+	LevelError
+	LevelWarning
+	LevelInfo
+	LevelDebug
+	LevelTrace
 )
 
-func internalRecover() {
-	if err := recover(); err != nil {
-		stack := make([]byte, 1024*8)
-		runtime.Stack(stack, false)
-		println("=================================")
-		println()
-		println("GOLOG - INTERNAL PANIC")
-		println()
-		println(string(stack))
-		println()
-		println("=================================")
+func (l Level) String() string {
+	switch l {
+	case LevelPanic:
+		return "PANIC"
+	case LevelError:
+		return "ERROR"
+	case LevelWarning:
+		return "WARNING"
+	case LevelInfo:
+		return "INFO"
+	case LevelDebug:
+		return "DEBUG"
+	case LevelTrace:
+		return "TRACE"
+	default:
+		panic("undefined logging level")
 	}
 }
 
-const messageBufferSize = 1024
-const stackBufferSize = 2048
-const timestampFormat = "02.01.2006 15:04:05"
-
-var (
-	_messagePool = sync.Pool{
-		New: func() any {
-			return &message{
-				buff:      make([]byte, 0, messageBufferSize),
-				stack:     make([]byte, stackBufferSize),
-				arguments: make([]string, 0, 16),
-			}
-		},
+func (l Level) Color() string {
+	switch l {
+	case LevelPanic:
+		return errorColorCode
+	case LevelError:
+		return errorColorCode
+	case LevelWarning:
+		return warningColorCode
+	case LevelInfo:
+		return infoColorCode
+	case LevelDebug:
+		return debugColorCode
+	case LevelTrace:
+		return traceColorCode
+	default:
+		panic("undefined logging level")
 	}
-)
-
-func getMessage(log Logger, level Level) *message {
-	msg := _messagePool.Get().(*message)
-	msg.empty = level > log.Level()
-	msg.instance = log
-	msg.level = level
-	msg.buff = msg.buff[:0]
-	msg.sendStack = false
-	msg.stack = msg.stack[:cap(msg.stack)]
-	msg.arguments = msg.arguments[:0]
-	msg.userMessage = ""
-	msg.time = time.Now()
-	msg.err = nil
-	msg.code = -1
-	return msg
 }
 
-func freeMessage(msg *message) {
-	if cap(msg.buff) > messageBufferSize {
-		msg.buff = nil
-		msg.buff = make([]byte, 0, messageBufferSize)
+func levelFromString(str string) Level {
+	switch strings.ToUpper(str) {
+	case "PANIC":
+		return LevelPanic
+	case "ERROR":
+		return LevelError
+	case "WARNING":
+		return LevelWarning
+	case "INFO":
+		return LevelInfo
+	case "DEBUG":
+		return LevelDebug
+	case "TRACE":
+		return LevelTrace
+	default:
+		return LevelInfo
 	}
-	if cap(msg.stack) > stackBufferSize {
-		msg.stack = nil
-		msg.stack = make([]byte, stackBufferSize)
-	}
-	_messagePool.Put(msg)
+}
+
+type Message interface {
+	Internal() MessageInfo
+	Details(v any) Message
+	Param(name, value any) Message
+	Duration(d time.Duration) Message
+	Stack() Message
+
+	Send(format string, args ...any)
+	Throw(err error)
+}
+
+type MessageInfo struct {
+	Details  any
+	Logger   Logger
+	Level    Level
+	Stack    []byte
+	ExitCode int
+	Duration time.Duration
+	Message  []byte
+	Params   Params
 }
 
 type message struct {
-	empty       bool
-	instance    Logger
-	level       Level
-	arguments   []string
-	userMessage string
-	time        time.Time
-	stack       []byte
-	buff        []byte
-	sendStack   bool
-	err         error
-	code        int
-}
-
-func (m *message) GetExitCode() int {
-	return m.code
-}
-
-func (m *message) fatal() FatalMessage {
-	return m
-}
-
-func (m *message) ExitCode(code int) Message {
-	m.code = code
-	return m
-}
-
-func (m *message) Error() error {
-	return m.err
-}
-
-func (m *message) SendError(err error) {
-	m.err = err
-	m.Stack().Send("%s", err)
+	info MessageInfo
 }
 
 func (m *message) Stack() Message {
-	m.stack = m.GetStack()
-	m.sendStack = true
-	return m
-}
-
-func (m *message) GetStack() []byte {
-	m.stack = m.stack[:cap(m.stack)]
-	written := runtime.Stack(m.stack, false)
-	m.stack = m.stack[:written]
-	return m.stack
-}
-
-func (m *message) FileWithLine() Message {
-	_, file, line, ok := runtime.Caller(1)
-	if ok {
-		m.Add("%v:%v", file, line)
-	}
-	return m
-}
-
-func (m *message) Instance() Logger {
-	return m.instance
-}
-
-func (m *message) Level() Level {
-	return m.level
-}
-
-func (m *message) Arguments() []string {
-	return m.arguments
-}
-
-func (m *message) UserMessage() string {
-	return m.userMessage
-}
-
-func (m *message) Time() time.Time {
-	return m.time
-}
-
-func (m *message) Use(hook string, arg any) Message {
-	if m.empty {
+	if !isEmpty(m.info.Stack) {
 		return m
 	}
-	defer internalRecover()
-	if fn := m.Instance().Hook(hook); fn != nil {
-		fn(m, arg)
-	}
+	runtime.Stack(m.info.Stack, false)
 	return m
 }
 
-func (m *message) insSep() {
-	m.buff = append(m.buff, ' ', '|', ' ')
+func (m *message) Throw(err error) {
+	m.Stack().Send(err.Error())
 }
 
-func (m *message) Any(args ...any) Message {
-	if m.empty {
-		return m
-	}
-	for i := range args {
-		m.arguments = append(m.arguments, fmt.Sprint(args[i]))
-	}
+func (m *message) Internal() MessageInfo {
+	return m.info
+}
+
+func (m *message) Details(v any) Message {
+	m.info.Details = v
 	return m
 }
 
-func (m *message) Add(format string, args ...any) Message {
-	if m.empty {
-		return m
-	}
-	m.arguments = append(m.arguments, fmt.Sprintf(format, args...))
+func (m *message) Param(name, value any) Message {
+	arr := paramsPool.Get()
+	(*arr)[0] = name
+	(*arr)[1] = value
+	m.info.Params = append(m.info.Params, arr)
+	return m
+}
+
+func (m *message) Duration(d time.Duration) Message {
+	m.info.Duration = d
 	return m
 }
 
 func (m *message) Send(format string, args ...any) {
-	defer internalRecover()
-	defer freeMessage(m)
-	if m.empty {
+	defer messagePool.Put(m)
+
+	if m.Internal().Level > m.Internal().Logger.Internal().Level {
 		return
 	}
-	if colorsEnabled {
-		switch m.level {
-		case LevelInfo:
-			m.buff = append(m.buff, infoCode...)
-		case LevelDebug:
-			m.buff = append(m.buff, debugCode...)
-		case LevelError, LevelPanic:
-			m.buff = append(m.buff, errorCode...)
-		case LevelWarn:
-			m.buff = append(m.buff, warnCode...)
-		}
+	m.info.Message = fmt.Appendf(m.info.Message, format, args...)
+	m.info.Logger.Internal().Engine(m)
+}
+
+var messagePool = gpool.New[message](gpool.OnInit[message](func(m *message) {
+	m.info.Stack = make([]byte, 1024*4)
+	m.info.Params = make(Params, 0, 25)
+	m.info.Message = make([]byte, 0, 1024*4)
+}), gpool.OnPut[message](func(m *message) {
+	m.info.Message = m.info.Message[:0]
+	for _, param := range m.info.Params {
+		paramsPool.Put(param)
 	}
-	if m.level == LevelPanic {
-		m.buff = append(m.buff, '\r', '\n')
-		m.buff = append(m.buff, '!', '!', ' ', ' ')
+	m.info.Params = m.info.Params[:0]
+	m.info.Details = nil
+	m.info.ExitCode = 0
+	clear(m.info.Stack)
+	m.info.Duration = 0
+}))
+
+func newMessage(log Logger, level Level) Message {
+	msg := messagePool.Get()
+	msg.info.Level = level
+	msg.info.Logger = log
+	return msg
+}
+
+func newErrorMessage(log Logger, exitCode ...int) Message {
+	msg := messagePool.Get()
+	msg.info.Level = inlineif.IfElse(len(exitCode) > 0, LevelPanic, LevelError)
+	if len(exitCode) > 0 {
+		msg.info.ExitCode = exitCode[0]
 	}
-	m.buff = m.time.AppendFormat(m.buff, timestampFormat)
-	m.insSep()
-	m.buff = append(m.buff, internal.GetBytes(m.level.String())...)
-	m.insSep()
-	for i := range m.Instance().Modules() {
-		if len(m.Instance().Modules()[i]) == 0 {
-			continue
-		}
-		if i != 0 {
-			m.buff = append(m.buff, ' ')
-		}
-		m.buff = append(m.buff, internal.GetBytes(m.Instance().Modules()[i])...)
-	}
-	if len(m.arguments) != 0 {
-		m.insSep()
-		for i := range m.arguments {
-			if len(m.arguments[i]) == 0 {
-				continue
-			}
-			if i != 0 {
-				m.insSep()
-			}
-			m.buff = append(m.buff, internal.GetBytes(m.arguments[i])...)
-		}
-	}
-	m.buff = append(m.buff, ' ', '-', '>', ' ')
-	offset := len(m.buff)
-	m.buff = fmt.Appendf(m.buff, format, args...)
-	m.userMessage = internal.ToString(m.buff[offset:len(m.buff)])
-	if m.level == LevelPanic {
-		m.buff = append(m.buff, ' ', ' ', '!', '!')
-		m.buff = append(m.buff, '\r', '\n')
-	}
-	if colorsEnabled {
-		m.buff = append(m.buff, resetCode...)
-	}
-	if m.Instance().Writer() != nil {
-		m.buff = append(m.buff, '\r', '\n')
-		_, _ = m.Instance().Writer().Write(m.buff)
-		if m.sendStack {
-			if cap(m.stack)+2 > stackBufferSize {
-				m.stack = append(m.stack, '\r', '\n')
-			} else {
-				m.stack[len(m.stack)] = '\r'
-				m.stack[len(m.stack)+1] = '\n'
-			}
-			_, _ = m.Instance().Writer().Write(m.stack)
-		}
-	}
-	m.Instance().OnLog(m)
-	if m.code != -1 {
-		os.Exit(m.code)
-	}
+	msg.info.Logger = log
+	return msg
 }
