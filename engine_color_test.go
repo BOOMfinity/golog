@@ -7,6 +7,7 @@ import (
 
 func BenchmarkColorSimple(b *testing.B) {
 	b.Run("WithoutModule", func(b *testing.B) {
+		b.ReportAllocs()
 		log := NewCustom("test", NewColorEngine(io.Discard))
 		b.ResetTimer()
 		for range b.N {
@@ -15,6 +16,7 @@ func BenchmarkColorSimple(b *testing.B) {
 	})
 
 	b.Run("WithModule", func(b *testing.B) {
+		b.ReportAllocs()
 		log := NewCustom("test", NewColorEngine(io.Discard)).Module("another-module")
 		b.ResetTimer()
 		for range b.N {
@@ -25,6 +27,7 @@ func BenchmarkColorSimple(b *testing.B) {
 
 func BenchmarkColorSimpleThreaded(b *testing.B) {
 	b.Run("WithoutModule", func(b *testing.B) {
+		b.ReportAllocs()
 		log := NewCustom("test", NewColorEngine(io.Discard))
 		b.ResetTimer()
 		b.RunParallel(func(p *testing.PB) {
@@ -34,6 +37,7 @@ func BenchmarkColorSimpleThreaded(b *testing.B) {
 		})
 	})
 	b.Run("WithModule", func(b *testing.B) {
+		b.ReportAllocs()
 		log := NewCustom("test", NewColorEngine(io.Discard)).Module("another-module")
 		b.ResetTimer()
 		b.RunParallel(func(p *testing.PB) {
@@ -45,6 +49,7 @@ func BenchmarkColorSimpleThreaded(b *testing.B) {
 }
 
 func BenchmarkColorParams2(b *testing.B) {
+	b.ReportAllocs()
 	log := NewCustom("test", NewColorEngine(io.Discard))
 	b.ResetTimer()
 	for range b.N {
@@ -53,6 +58,7 @@ func BenchmarkColorParams2(b *testing.B) {
 }
 
 func BenchmarkColorParams2Threaded(b *testing.B) {
+	b.ReportAllocs()
 	log := NewCustom("test", NewColorEngine(io.Discard))
 	b.ResetTimer()
 	b.RunParallel(func(p *testing.PB) {
@@ -63,6 +69,7 @@ func BenchmarkColorParams2Threaded(b *testing.B) {
 }
 
 func BenchmarkColorParams10(b *testing.B) {
+	b.ReportAllocs()
 	log := NewCustom("test", NewColorEngine(io.Discard))
 	b.ResetTimer()
 	for range b.N {
@@ -71,6 +78,7 @@ func BenchmarkColorParams10(b *testing.B) {
 }
 
 func BenchmarkColorParams10Threaded(b *testing.B) {
+	b.ReportAllocs()
 	log := NewCustom("test", NewColorEngine(io.Discard))
 	b.ResetTimer()
 	b.RunParallel(func(p *testing.PB) {
@@ -81,6 +89,7 @@ func BenchmarkColorParams10Threaded(b *testing.B) {
 }
 
 func BenchmarkColorWithFormatString(b *testing.B) {
+	b.ReportAllocs()
 	log := NewCustom("test", NewColorEngine(io.Discard))
 	b.ResetTimer()
 	for range b.N {
@@ -89,6 +98,7 @@ func BenchmarkColorWithFormatString(b *testing.B) {
 }
 
 func BenchmarkColorWithFormatStringThreaded(b *testing.B) {
+	b.ReportAllocs()
 	log := NewCustom("test", NewColorEngine(io.Discard))
 	b.ResetTimer()
 	b.RunParallel(func(p *testing.PB) {
@@ -99,6 +109,7 @@ func BenchmarkColorWithFormatStringThreaded(b *testing.B) {
 }
 
 func BenchmarkColorWithFormatInt(b *testing.B) {
+	b.ReportAllocs()
 	log := NewCustom("test", NewColorEngine(io.Discard))
 	b.ResetTimer()
 	for range b.N {
@@ -107,6 +118,7 @@ func BenchmarkColorWithFormatInt(b *testing.B) {
 }
 
 func BenchmarkColorWithFormatIntThreaded(b *testing.B) {
+	b.ReportAllocs()
 	log := NewCustom("test", NewColorEngine(io.Discard))
 	b.ResetTimer()
 	b.RunParallel(func(p *testing.PB) {
