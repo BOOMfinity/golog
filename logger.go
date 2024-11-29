@@ -64,7 +64,10 @@ func (l *loggerImpl) ResetScope() Logger {
 }
 
 func (l *loggerImpl) ResetParams() Logger {
-	clear(l.info.Params)
+	for i := range l.info.Params {
+		l.info.Params[i] = nil
+	}
+	l.info.Params = l.info.Params[:0]
 	return l
 }
 
@@ -73,7 +76,7 @@ func (l *loggerImpl) Internal() LoggerInfo {
 }
 
 func (l *loggerImpl) Param(name string, value any) Logger {
-	arr := paramsPool.Get()
+	arr := &[2]any{}
 	(*arr)[0] = name
 	(*arr)[1] = value
 	l.info.Params = append(l.info.Params, arr)
