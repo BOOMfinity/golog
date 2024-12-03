@@ -105,10 +105,8 @@ type message struct {
 }
 
 func (m *message) Stack() Message {
-	if !isEmpty(m.info.Stack) {
-		return m
-	}
-	runtime.Stack(m.info.Stack, false)
+	l := runtime.Stack(m.info.Stack[:cap(m.info.Stack)], false)
+	m.info.Stack = m.info.Stack[:l]
 	return m
 }
 
@@ -160,7 +158,7 @@ var messagePool = gpool.New[message](gpool.OnInit[message](func(m *message) {
 	m.info.Params = m.info.Params[:0]
 	m.info.Details = nil
 	m.info.ExitCode = 0
-	clear(m.info.Stack)
+	m.info.Stack = m.info.Stack[:0]
 	m.info.Duration = 0
 }))
 
