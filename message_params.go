@@ -1,7 +1,6 @@
 package golog
 
-import "github.com/BOOMfinity/go-utils/gpool"
-
-type Params []*[2]any
-
-var paramsPool = gpool.New[[2]any]()
+type Parameter struct {
+	Name  string `json:"name"`
+	Value any    `json:"value"`
+}

@@ -2,6 +2,7 @@ package golog
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 	"time"
@@ -74,107 +75,100 @@ func levelFromString(str string) Level {
 	case "TRACE":
 		return LevelTrace
 	default:
-		return LevelInfo
+		return 0
 	}
 }
 
-type Message interface {
-	Internal() MessageInfo
-	Details(v any) Message
-	Param(name, value any) Message
-	Duration(d time.Duration) Message
-	Stack() Message
-
-	Send(format string, args ...any)
-	Throw(err error)
+type MessageData struct {
+	Details       any           `json:"details,omitempty"`
+	Level         Level         `json:"level,omitempty"`
+	Stack         []byte        `json:"stack,omitempty"`
+	StackIncluded bool          `json:"-"`
+	ExitCode      int           `json:"exit_code,omitempty"`
+	Duration      time.Duration `json:"duration,omitempty"`
+	Message       []byte        `json:"message,omitempty"`
+	Params        []Parameter   `json:"params,omitempty"`
 }
 
-type MessageInfo struct {
-	Details  any
-	Logger   Logger
-	Level    Level
-	Stack    []byte
-	ExitCode int
-	Duration time.Duration
-	Message  []byte
-	Params   Params
+type Message struct {
+	data   *MessageData
+	parent *Logger
 }
 
-type message struct {
-	info MessageInfo
-}
-
-func (m *message) Stack() Message {
-	l := runtime.Stack(m.info.Stack[:cap(m.info.Stack)], false)
-	m.info.Stack = m.info.Stack[:l]
+func (m Message) Stack() Message {
+	l := runtime.Stack(m.data.Stack[:cap(m.data.Stack)], false)
+	m.data.Stack = m.data.Stack[:l]
+	m.data.StackIncluded = true
 	return m
 }
 
-func (m *message) Throw(err error) {
+func (m Message) Throw(err error) {
 	m.Stack().Send(err.Error())
 }
 
-func (m *message) Internal() MessageInfo {
-	return m.info
-}
-
-func (m *message) Details(v any) Message {
-	m.info.Details = v
+func (m Message) Details(v any) Message {
+	m.data.Details = v
 	return m
 }
 
-func (m *message) Param(name, value any) Message {
-	arr := paramsPool.Get()
-	(*arr)[0] = name
-	(*arr)[1] = value
-	m.info.Params = append(m.info.Params, arr)
+func (m Message) Param(name string, value any) Message {
+	m.data.Params = append(m.data.Params, Parameter{
+		Name:  name,
+		Value: value,
+	})
 	return m
 }
 
-func (m *message) Duration(d time.Duration) Message {
-	m.info.Duration = d
+func (m Message) Duration(d time.Duration) Message {
+	m.data.Duration = d
 	return m
 }
 
-func (m *message) Send(format string, args ...any) {
-	defer messagePool.Put(m)
-
-	if m.Internal().Level > m.Internal().Logger.Internal().Level {
+func (m Message) Send(format string, args ...any) {
+	defer dataPool.Put(m.data)
+	if m.data.Level > m.parent.Level() {
 		return
 	}
-	m.info.Message = fmt.Appendf(m.info.Message, format, args...)
-	m.info.Logger.Internal().Engine(m)
+	m.data.Message = fmt.Appendf(m.data.Message, format, args...)
+	m.parent.engine(m.parent, m.data)
+	if m.data.ExitCode != 0 {
+		os.Exit(m.data.ExitCode)
+	}
 }
 
-var messagePool = gpool.New[message](gpool.OnInit[message](func(m *message) {
-	m.info.Stack = make([]byte, 1024*4)
-	m.info.Params = make(Params, 0, 25)
-	m.info.Message = make([]byte, 0, 1024*4)
-}), gpool.OnPut[message](func(m *message) {
-	m.info.Message = m.info.Message[:0]
-	for _, param := range m.info.Params {
-		paramsPool.Put(param)
-	}
-	m.info.Params = m.info.Params[:0]
-	m.info.Details = nil
-	m.info.ExitCode = 0
-	m.info.Stack = m.info.Stack[:0]
-	m.info.Duration = 0
+var dataPool = gpool.New[MessageData](gpool.OnInit[MessageData](func(m *MessageData) {
+	m.Stack = make([]byte, Config.StackTraceBufferSize())
+	m.Params = make([]Parameter, 0, Config.MessageParametersSliceAllocation())
+	m.Message = make([]byte, 0, Config.MessageBufferSize())
+}), gpool.OnPut[MessageData](func(m *MessageData) {
+	clear(m.Stack)
+	clear(m.Params)
+	clear(m.Message)
+	m.Stack = m.Stack[:Config.StackTraceBufferSize():Config.StackTraceBufferSize()]
+	m.Params = m.Params[:0:Config.MessageParametersSliceAllocation()]
+	m.Message = m.Message[:0:Config.MessageBufferSize()]
+	m.Details = nil
+	m.ExitCode = 0
+	m.Duration = 0
+	m.StackIncluded = false
 }))
 
-func newMessage(log Logger, level Level) Message {
-	msg := messagePool.Get()
-	msg.info.Level = level
-	msg.info.Logger = log
-	return msg
+func newMessage(log *Logger, level Level) Message {
+	data := dataPool.Get()
+	data.Level = level
+	return Message{
+		data:   data,
+		parent: log,
+	}
 }
 
-func newErrorMessage(log Logger, exitCode ...int) Message {
-	msg := messagePool.Get()
-	msg.info.Level = inlineif.IfElse(len(exitCode) > 0, LevelPanic, LevelError)
+func newErrorMessage(log *Logger, exitCode ...int) Message {
+	message := newMessage(log, inlineif.IfElse(len(exitCode) > 0, LevelPanic, LevelError))
 	if len(exitCode) > 0 {
-		msg.info.ExitCode = exitCode[0]
+		message.data.ExitCode = exitCode[0]
 	}
-	msg.info.Logger = log
-	return msg
+	if message.data.Level == LevelPanic || Config.IncludeStackOnError() {
+		message.Stack()
+	}
+	return message
 }

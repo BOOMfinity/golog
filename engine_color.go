@@ -5,118 +5,91 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"slices"
-	"sync"
-	"syscall"
 	"time"
 
 	"github.com/BOOMfinity/go-utils/gpool"
 	"github.com/gookit/color"
 )
 
-var globalLocker sync.Mutex
-var stdout = os.NewFile(uintptr(syscall.Stdout), "/dev/stdout")
-
-var TimeFormat = "02.01.2006 15:04:05"
-
 var buffPool = gpool.New[bytes.Buffer](gpool.OnInit[bytes.Buffer](func(b *bytes.Buffer) {
-	b.Grow(1024 * 8)
+	b.Grow(Config.EngineBufferSize())
+}), gpool.OnPut(func(b *bytes.Buffer) {
+	b.Reset()
 }))
 
-var loggerPool = gpool.New[[]Logger](gpool.OnInit[[]Logger](func(i *[]Logger) {
-	*i = make([]Logger, 0, 25)
-}))
-
-func NewColorEngine(writers ...io.Writer) WriteEngine {
+func ColorEngine(writers ...io.Writer) WriteEngine {
 	if len(writers) == 0 {
-		writers = append(writers, stdout)
+		writers = append(writers, os.Stdout)
 	}
 
 	writer := io.MultiWriter(writers...)
 
-	return func(msg Message) {
+	return func(log *Logger, data *MessageData) {
 		buff := buffPool.Get()
-		defer buff.Reset()
 		defer buffPool.Put(buff)
-		if !disableColors {
-			buff.WriteString(msg.Internal().Level.Color())
-		}
-		buff.Write(time.Now().AppendFormat(buff.Bytes(), TimeFormat))
-		buff.WriteString(" | ")
-		buff.WriteString(msg.Internal().Level.String())
-		buff.WriteString(" | ")
-		{
-			loggers := loggerPool.Get()
-			logger := msg.Internal().Logger
-			for logger != nil {
-				*loggers = append(*loggers, logger)
-				logger = logger.Internal().Parent
-			}
-			slices.Reverse(*loggers)
-			for _, logger = range *loggers {
-				buff.WriteString(logger.Internal().Module)
-				if logger.Internal().Scope != "" {
-					buff.WriteByte('@')
-					buff.WriteString(logger.Internal().Scope)
-				}
-				buff.WriteByte(' ')
-			}
-			*loggers = (*loggers)[:0]
-			loggerPool.Put(loggers)
+		if !Config.DisableTerminalColors() {
+			buff.WriteString(data.Level.Color())
 		}
 		{
-			if len(msg.Internal().Params) > 0 || len(msg.Internal().Logger.Internal().Params) > 0 {
+			dateBuff := dateTimeBuffer.Get()
+			*dateBuff = time.Now().AppendFormat(*dateBuff, log.DateTimeFormat("02.01.2006 15:04:05"))
+			buff.Write(*dateBuff)
+			dateTimeBuffer.Put(dateBuff)
+		}
+		buff.WriteString(" | ")
+		buff.WriteString(data.Level.String())
+		buff.WriteString(" | ")
+		for _, module := range log.Modules() {
+			buff.WriteString(module)
+			buff.WriteByte(' ')
+		}
+		{
+			params := log.Params()
+			if len(params) > 0 {
 				buff.WriteString("| ")
-			}
-			if len(msg.Internal().Logger.Internal().Params) > 0 {
-				for _, val := range msg.Internal().Logger.Internal().Params {
-					k, v := val[0], val[1]
-					_, _ = fmt.Fprint(buff, k)
+				for _, parameter := range params {
+					buff.WriteString(parameter.Name)
 					buff.WriteByte('(')
-					_, _ = fmt.Fprint(buff, v)
-					buff.WriteByte(')')
-					buff.WriteByte(' ')
-				}
-			}
-			if len(msg.Internal().Params) > 0 {
-				for _, val := range msg.Internal().Params {
-					k, v := val[0], val[1]
-					_, _ = fmt.Fprint(buff, k)
-					buff.WriteByte('(')
-					_, _ = fmt.Fprint(buff, v)
+					_, _ = fmt.Fprint(buff, parameter.Value)
 					buff.WriteByte(')')
 					buff.WriteByte(' ')
 				}
 			}
 		}
 		{
-			if msg.Internal().Duration > 0 {
+			if data.Duration > 0 {
 				buff.WriteString("| ")
-				buff.WriteString(msg.Internal().Duration.Round(time.Millisecond).String())
+				buff.WriteString(data.Duration.Round(time.Millisecond).String())
 				buff.WriteByte(' ')
 			}
 		}
 		buff.WriteString("-> ")
-		buff.Write(msg.Internal().Message)
+		buff.Write(data.Message)
 		{
-			if msg.Internal().Details != nil {
+			if data.Details != nil {
 				buff.WriteByte('\n')
-				_, _ = fmt.Fprintf(buff, "%v", msg.Internal().Details)
+				if !Config.MarshalDetails() {
+					_, _ = fmt.Fprint(buff, data.Details)
+				} else {
+					enc := encoders.Get()
+					defer encoders.Put(enc)
+					enc.buff.Reset()
+					_ = enc.json.Encode(data.Details)
+					buff.Write(enc.buff.Bytes())
+					buff.Truncate(buff.Len() - 1)
+				}
 			}
 		}
-		if !disableColors {
+		if !Config.DisableTerminalColors() {
 			buff.WriteString(color.ResetSet)
 		}
 		buff.WriteByte('\n')
-		if !isEmpty(msg.Internal().Stack) {
-			buff.Write(msg.Internal().Stack)
+		if data.StackIncluded {
+			buff.Write(data.Stack)
 		}
-
-		globalLocker.Lock()
 		_, _ = writer.Write(buff.Bytes())
-		if msg.Internal().ExitCode != 0 {
-			os.Exit(msg.Internal().ExitCode)
+		if data.ExitCode != 0 {
+			os.Exit(data.ExitCode)
 		}
-		globalLocker.Unlock()
 	}
 }

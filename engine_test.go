@@ -1,36 +1,78 @@
 package golog
 
-func printSimple(log Logger) {
-	log.Info().Send("test")
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
+
+func runUserMessage(log *Logger, num int) func(b *testing.B) {
+	log = log.Copy()
+	return func(b *testing.B) {
+		b.ReportAllocs()
+		message := strings.Repeat("x", num)
+		b.ResetTimer()
+		for range b.N {
+			log.Info().Send(message)
+		}
+	}
 }
 
-func printParams2(log Logger) {
-	msg := log.Info()
-	msg.Param("one", "czxc")
-	msg.Param("two", "fsdf")
-	msg.Param("three", "fsdf")
-	msg.Send("test")
+func runWithModules(log *Logger, num int) func(b *testing.B) {
+	log = log.Copy()
+	return func(b *testing.B) {
+		b.ReportAllocs()
+		for range num {
+			log = log.Module(fmt.Sprintf("mod-%d", num))
+		}
+		b.ResetTimer()
+		for range b.N {
+			log.Info().Send("test")
+		}
+	}
 }
 
-func printParams10(log Logger) {
-	msg := log.Info()
-	msg.Param("one", 1)
-	msg.Param("two", "fsdf")
-	msg.Param("three", "2514")
-	msg.Param("four", .43)
-	msg.Param("five", "sdfsdf")
-	msg.Param("six", "sdasli3,mn")
-	msg.Param("seven", "cvsdf")
-	msg.Param("eight", 36251)
-	msg.Param("nine", "sdfsdf")
-	msg.Param("ten", 34123)
-	msg.Send("test")
+func runJustMessage(log *Logger) func(b *testing.B) {
+	log = log.Copy()
+	return func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			log.Info().Send("test")
+		}
+	}
 }
 
-func printFmtStringArg(log Logger) {
-	log.Info().Send("hello %s", "world")
-}
-
-func printFmtIntArg(log Logger) {
-	log.Info().Send("hello %d", 1234)
+func runWithDetails(log *Logger) func(b *testing.B) {
+	log = log.Copy()
+	return func(b *testing.B) {
+		b.Run("string", func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				log.Info().Details("test").Send("test")
+			}
+		})
+		b.Run("int", func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				log.Info().Details(5).Send("test")
+			}
+		})
+		b.Run("float", func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				log.Info().Details(3.14).Send("test")
+			}
+		})
+		b.Run("slice", func(b *testing.B) {
+			b.ReportAllocs()
+			arr := []int{1, 2, 3, 4, 5}
+			b.ResetTimer()
+			for range b.N {
+				log.Info().Details(arr).Send("test")
+			}
+		})
+	}
 }

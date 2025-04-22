@@ -5,7 +5,7 @@ type RecoverParams struct {
 	Panic    bool
 }
 
-func (l *loggerImpl) Recover(params ...RecoverParams) {
+func (l *Logger) Recover(params ...RecoverParams) {
 	p := RecoverParams{
 		Panic: false,
 	}

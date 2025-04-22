@@ -5,125 +5,30 @@ import (
 	"testing"
 )
 
-func BenchmarkColorSimple(b *testing.B) {
-	b.Run("WithoutModule", func(b *testing.B) {
-		b.ReportAllocs()
-		log := NewCustom("test", NewColorEngine(io.Discard))
-		b.ResetTimer()
-		for range b.N {
-			printSimple(log)
-		}
+func BenchmarkColor(b *testing.B) {
+	log := New("test", ColorEngine(io.Discard))
+	b.Run("JustMessage", runJustMessage(log))
+	b.Run("Modules", func(b *testing.B) {
+		b.Run("1", runWithModules(log, 1))
+		b.Run("3", runWithModules(log, 3))
+		b.Run("5", runWithModules(log, 5))
+		b.Run("10", runWithModules(log, 10))
+		b.Run("20", runWithModules(log, 20))
 	})
-
-	b.Run("WithModule", func(b *testing.B) {
-		b.ReportAllocs()
-		log := NewCustom("test", NewColorEngine(io.Discard)).Module("another-module")
-		b.ResetTimer()
-		for range b.N {
-			printSimple(log)
-		}
+	b.Run("WithDetails", func(b *testing.B) {
+		b.Run("ParseToJSON=true", runWithDetails(log))
+		Config.SetMarshalDetails(false)
+		b.Run("ParseToJSON=false", runWithDetails(log))
+		Config.SetMarshalDetails(true)
 	})
-}
-
-func BenchmarkColorSimpleThreaded(b *testing.B) {
-	b.Run("WithoutModule", func(b *testing.B) {
-		b.ReportAllocs()
-		log := NewCustom("test", NewColorEngine(io.Discard))
-		b.ResetTimer()
-		b.RunParallel(func(p *testing.PB) {
-			for p.Next() {
-				printSimple(log)
-			}
-		})
-	})
-	b.Run("WithModule", func(b *testing.B) {
-		b.ReportAllocs()
-		log := NewCustom("test", NewColorEngine(io.Discard)).Module("another-module")
-		b.ResetTimer()
-		b.RunParallel(func(p *testing.PB) {
-			for p.Next() {
-				printSimple(log)
-			}
-		})
-	})
-}
-
-func BenchmarkColorParams2(b *testing.B) {
-	b.ReportAllocs()
-	log := NewCustom("test", NewColorEngine(io.Discard))
-	b.ResetTimer()
-	for range b.N {
-		printParams2(log)
-	}
-}
-
-func BenchmarkColorParams2Threaded(b *testing.B) {
-	b.ReportAllocs()
-	log := NewCustom("test", NewColorEngine(io.Discard))
-	b.ResetTimer()
-	b.RunParallel(func(p *testing.PB) {
-		for p.Next() {
-			printParams2(log)
-		}
-	})
-}
-
-func BenchmarkColorParams10(b *testing.B) {
-	b.ReportAllocs()
-	log := NewCustom("test", NewColorEngine(io.Discard))
-	b.ResetTimer()
-	for range b.N {
-		printParams10(log)
-	}
-}
-
-func BenchmarkColorParams10Threaded(b *testing.B) {
-	b.ReportAllocs()
-	log := NewCustom("test", NewColorEngine(io.Discard))
-	b.ResetTimer()
-	b.RunParallel(func(p *testing.PB) {
-		for p.Next() {
-			printParams10(log)
-		}
-	})
-}
-
-func BenchmarkColorWithFormatString(b *testing.B) {
-	b.ReportAllocs()
-	log := NewCustom("test", NewColorEngine(io.Discard))
-	b.ResetTimer()
-	for range b.N {
-		printFmtStringArg(log)
-	}
-}
-
-func BenchmarkColorWithFormatStringThreaded(b *testing.B) {
-	b.ReportAllocs()
-	log := NewCustom("test", NewColorEngine(io.Discard))
-	b.ResetTimer()
-	b.RunParallel(func(p *testing.PB) {
-		for p.Next() {
-			printFmtStringArg(log)
-		}
-	})
-}
-
-func BenchmarkColorWithFormatInt(b *testing.B) {
-	b.ReportAllocs()
-	log := NewCustom("test", NewColorEngine(io.Discard))
-	b.ResetTimer()
-	for range b.N {
-		printFmtIntArg(log)
-	}
-}
-
-func BenchmarkColorWithFormatIntThreaded(b *testing.B) {
-	b.ReportAllocs()
-	log := NewCustom("test", NewColorEngine(io.Discard))
-	b.ResetTimer()
-	b.RunParallel(func(p *testing.PB) {
-		for p.Next() {
-			printFmtIntArg(log)
-		}
+	b.Run("UserMessage", func(b *testing.B) {
+		b.Run("10", runUserMessage(log, 10))
+		b.Run("25", runUserMessage(log, 25))
+		b.Run("50", runUserMessage(log, 50))
+		b.Run("100", runUserMessage(log, 100))
+		b.Run("200", runUserMessage(log, 200))
+		b.Run("400", runUserMessage(log, 400))
+		b.Run("800", runUserMessage(log, 800))
+		b.Run("1600", runUserMessage(log, 1600))
 	})
 }

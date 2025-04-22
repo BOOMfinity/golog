@@ -2,113 +2,84 @@ package golog
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"slices"
 	"time"
+	"unsafe"
+
+	"github.com/BOOMfinity/go-utils/gpool"
 )
 
-func NewJSONEngine(writers ...io.Writer) WriteEngine {
+type encoder struct {
+	json *json.Encoder
+	buff *bytes.Buffer
+}
+
+type structure struct {
+	Time     string      `json:"time"`
+	Level    string      `json:"level"`
+	Context  []Parameter `json:"context"`
+	Module   []string    `json:"module"`
+	Params   []Parameter `json:"params"`
+	Stack    string      `json:"stack,omitempty"`
+	Duration int64       `json:"duration,omitempty"`
+	Details  any         `json:"details,omitempty"`
+	Message  string      `json:"message"`
+}
+
+var structures = gpool.New[structure](gpool.OnPut(func(s *structure) {
+	clear(s.Module)
+	clear(s.Params)
+	s.Time = ""
+	s.Level = ""
+	s.Module = nil
+	s.Context = nil
+	s.Stack = ""
+	s.Duration = 0
+	s.Details = nil
+	s.Message = ""
+}))
+
+var encoders = gpool.New[encoder](gpool.OnInit[encoder](func(e *encoder) {
+	e.buff = bytes.NewBuffer(make([]byte, 0, Config.EngineBufferSize()))
+	e.json = json.NewEncoder(e.buff)
+}))
+
+func JSONEngine(writers ...io.Writer) WriteEngine {
 	if len(writers) == 0 {
-		writers = append(writers, stdout)
+		writers = append(writers, os.Stdout)
 	}
 
 	writer := io.MultiWriter(writers...)
 
-	return func(msg Message) {
-		buff := buffPool.Get()
-		defer buffPool.Put(buff)
-		buff.WriteString(`{"time:"`)
-		buff.Write(time.Now().AppendFormat(buff.Bytes()[8:], time.RFC3339))
-		buff.WriteString(`","level":"`)
-		buff.WriteString(msg.Internal().Level.String())
-		buff.WriteString(`","modules":[`)
-		{
-			loggers := loggerPool.Get()
-			logger := msg.Internal().Logger
-			i := 0
-			for logger != nil {
-				*loggers = append(*loggers, logger)
-				logger = logger.Internal().Parent
-			}
-			slices.Reverse(*loggers)
-			for i, logger = range *loggers {
-				buff.WriteByte('"')
-				buff.WriteString(logger.Internal().Module)
-				if logger.Internal().Scope != "" {
-					buff.WriteByte('@')
-					buff.WriteString(logger.Internal().Scope)
-				}
-				buff.WriteByte('"')
-				if i < len(*loggers)-1 {
-					buff.WriteByte(',')
-				}
-			}
-			*loggers = (*loggers)[:0]
-			loggerPool.Put(loggers)
-		}
-		buff.WriteString(`]`)
-		if len(msg.Internal().Params) > 0 || len(msg.Internal().Logger.Internal().Params) > 0 {
-			sum := len(msg.Internal().Params) + len(msg.Internal().Logger.Internal().Params)
-			num := 0
-			buff.WriteString(`","params":{`)
-			for _, val := range msg.Internal().Logger.Internal().Params {
-				k, v := val[0], val[1]
-				num++
-				buff.WriteByte('"')
-				_, _ = fmt.Fprint(buff, k)
-				buff.WriteByte(':')
-				_, _ = fmt.Fprint(buff, v)
-				buff.WriteByte('"')
-				if num < sum {
-					buff.WriteByte(',')
-				}
-			}
-			for _, val := range msg.Internal().Params {
-				k, v := val[0], val[1]
-				num++
-				buff.WriteByte('"')
-				_, _ = fmt.Fprint(buff, k)
-				buff.WriteByte(':')
-				_, _ = fmt.Fprint(buff, v)
-				buff.WriteByte('"')
-				if num < sum {
-					buff.WriteByte(',')
-				}
-			}
-			buff.WriteByte('}')
-		}
-		{
-			if msg.Internal().Duration > 0 {
-				buff.WriteString(`","duration":`)
-				buff.WriteString(fmt.Sprint(msg.Internal().Duration.Milliseconds()))
-			}
-		}
-		if !isEmpty(msg.Internal().Stack) {
-			buff.WriteString(`,"stack":"`)
-			buff.Write(bytes.ReplaceAll(bytes.ReplaceAll(msg.Internal().Stack, []byte("\n"), []byte("\\n")), []byte(`"`), []byte(`\"`)))
-			buff.WriteByte('"')
-		}
-		buff.WriteString(`,"message":"`)
-		buff.Write(msg.Internal().Message)
-		buff.WriteByte('"')
-		buff.WriteByte('}')
-		buff.WriteByte('\n')
-		globalLocker.Lock()
-		_, _ = buff.WriteTo(writer)
-		if msg.Internal().ExitCode > 0 {
-			os.Exit(msg.Internal().ExitCode)
-		}
-		globalLocker.Unlock()
-	}
-}
+	return func(log *Logger, data *MessageData) {
+		struc := structures.Get()
+		defer structures.Put(struc)
 
-func isEmpty(buff []byte) bool {
-	for _, b := range buff {
-		if b != 0 {
-			return false
+		dateTimeBuff := dateTimeBuffer.Get()
+		defer dateTimeBuffer.Put(dateTimeBuff)
+		*dateTimeBuff = time.Now().AppendFormat(*dateTimeBuff, log.DateTimeFormat(time.RFC3339Nano))
+		struc.Time = unsafe.String(unsafe.SliceData(*dateTimeBuff), len(*dateTimeBuff))
+		struc.Message = unsafe.String(unsafe.SliceData(data.Message), len(data.Message))
+		struc.Level = data.Level.String()
+		struc.Details = data.Details
+		if data.StackIncluded {
+			struc.Stack = unsafe.String(unsafe.SliceData(data.Stack), len(data.Stack))
 		}
+		struc.Params = data.Params
+		if data.Duration > 0 {
+			struc.Duration = data.Duration.Milliseconds()
+		}
+		struc.Module = log.Modules()
+		struc.Context = log.Params()
+		enc := encoders.Get()
+		defer encoders.Put(enc)
+		enc.buff.Reset()
+		if err := enc.json.Encode(struc); err != nil {
+			panic(fmt.Errorf("failed to encode structure: %w", err))
+		}
+		_, _ = writer.Write(enc.buff.Bytes())
 	}
-	return true
 }
