@@ -57,6 +57,18 @@ func ColorEngine(writers ...io.Writer) WriteEngine {
 			}
 		}
 		{
+			if len(data.Params) > 0 {
+				buff.WriteString("| ")
+				for _, p := range data.Params {
+					buff.WriteString(p.Name)
+					buff.WriteByte('(')
+					_, _ = fmt.Fprint(buff, p.Value)
+					buff.WriteByte(')')
+					buff.WriteByte(' ')
+				}
+			}
+		}
+		{
 			if data.Duration > 0 {
 				buff.WriteString("| ")
 				buff.WriteString(data.Duration.Round(time.Millisecond).String())
