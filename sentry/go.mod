@@ -1,4 +1,4 @@
-module github.com/BOOMfinity/golog/v2/sentry
+module github.com/BOOMfinity/golog/sentry
 
 go 1.24
 
