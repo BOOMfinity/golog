@@ -84,6 +84,7 @@ type MessageData struct {
 	Level         Level         `json:"level,omitempty"`
 	Stack         []byte        `json:"stack,omitempty"`
 	StackIncluded bool          `json:"-"`
+	Error         error         `json:"-"`
 	ExitCode      int           `json:"exit_code,omitempty"`
 	Duration      time.Duration `json:"duration,omitempty"`
 	Message       []byte        `json:"message,omitempty"`
@@ -103,6 +104,7 @@ func (m Message) Stack() Message {
 }
 
 func (m Message) Throw(err error) {
+	m.data.Error = err
 	m.Stack().Send(err.Error())
 }
 

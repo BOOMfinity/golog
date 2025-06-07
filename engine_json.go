@@ -18,21 +18,21 @@ type encoder struct {
 }
 
 type structure struct {
-	Time     string      `json:"time"`
-	Level    string      `json:"level"`
-	Context  []Parameter `json:"context"`
-	Module   []string    `json:"module"`
-	Params   []Parameter `json:"params"`
-	Stack    string      `json:"stack,omitempty"`
-	Duration int64       `json:"duration,omitempty"`
-	Details  any         `json:"details,omitempty"`
-	Message  string      `json:"message"`
+	Timestamp string      `json:"timestamp"`
+	Level     string      `json:"level"`
+	Context   []Parameter `json:"context"`
+	Module    []string    `json:"module"`
+	Params    []Parameter `json:"params"`
+	Stack     string      `json:"stack,omitempty"`
+	Duration  int64       `json:"duration,omitempty"`
+	Details   any         `json:"details,omitempty"`
+	Message   string      `json:"message"`
 }
 
 var structures = gpool.New[structure](gpool.OnPut(func(s *structure) {
 	clear(s.Module)
 	clear(s.Params)
-	s.Time = ""
+	s.Timestamp = ""
 	s.Level = ""
 	s.Module = nil
 	s.Context = nil
@@ -61,7 +61,7 @@ func JSONEngine(writers ...io.Writer) WriteEngine {
 		dateTimeBuff := dateTimeBuffer.Get()
 		defer dateTimeBuffer.Put(dateTimeBuff)
 		*dateTimeBuff = time.Now().AppendFormat(*dateTimeBuff, log.DateTimeFormat(time.RFC3339Nano))
-		struc.Time = unsafe.String(unsafe.SliceData(*dateTimeBuff), len(*dateTimeBuff))
+		struc.Timestamp = unsafe.String(unsafe.SliceData(*dateTimeBuff), len(*dateTimeBuff))
 		struc.Message = unsafe.String(unsafe.SliceData(data.Message), len(data.Message))
 		struc.Level = data.Level.String()
 		struc.Details = data.Details

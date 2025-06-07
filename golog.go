@@ -13,6 +13,14 @@ var dateTimeBuffer = gpool.New[[]byte](gpool.OnInit[[]byte](func(data *[]byte) {
 	*data = (*data)[:0:128]
 }))
 
+func Wrap(eng ...WriteEngine) WriteEngine {
+	return func(log *Logger, data *MessageData) {
+		for _, v := range eng {
+			v(log, data)
+		}
+	}
+}
+
 type WriteEngine func(log *Logger, data *MessageData)
 
 type globalOptions struct {

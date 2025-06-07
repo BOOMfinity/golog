@@ -140,15 +140,15 @@ func (l *Logger) Fatal(exitCode int) Message {
 
 func New(name string, engine ...WriteEngine) *Logger {
 	if len(engine) > 0 {
-		return newLogger(name, engine[0])
+		return newLogger(name, engine...)
 	}
 	return newLogger(name, ColorEngine())
 }
 
-func newLogger(name string, eng WriteEngine) *Logger {
+func newLogger(name string, eng ...WriteEngine) *Logger {
 	log := new(Logger)
 	log.level = LevelInfo
 	log.modules = append(log.modules, name)
-	log.engine = eng
+	log.engine = Wrap(eng...)
 	return log
 }
