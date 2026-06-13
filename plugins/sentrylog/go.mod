@@ -1,4 +1,4 @@
-module github.com/BOOMfinity/golog/v3/plugins/sentrylog
+module github.com/BOOMfinity/golog/plugins/sentrylog/v3
 
 go 1.26
 

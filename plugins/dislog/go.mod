@@ -1,4 +1,4 @@
-module github.com/BOOMfinity/golog/v3/plugins/dislog
+module github.com/BOOMfinity/golog/plugins/dislog/v3
 
 go 1.26
 
