@@ -28,24 +28,24 @@ db.Info().Attr("duration", "12ms").Msg("SELECT users")
 
 Plugins are separate modules, install them individually.
 
-### Sentry [![Go Reference](https://pkg.go.dev/badge/github.com/BOOMfinity/golog/v3/plugins/sentrylog.svg)](https://pkg.go.dev/github.com/BOOMfinity/golog/v3/plugins/sentrylog)
+### Sentry [![Go Reference](https://pkg.go.dev/badge/github.com/BOOMfinity/golog/plugins/sentrylog/v3.svg)](https://pkg.go.dev/github.com/BOOMfinity/golog/plugins/sentrylog/v3)
 
 Captures exceptions and forwards logs to [sentry.io](https://sentry.io).
 
 ```
-go get github.com/BOOMfinity/golog/v3/plugins/sentrylog
+go get github.com/BOOMfinity/golog/plugins/sentrylog/v3
 ```
 
 ```go
 log = log.WithHook(sentrylog.Init(true, true)) // exceptions + logs
 ```
 
-### Discord [![Go Reference](https://pkg.go.dev/badge/github.com/BOOMfinity/golog/v3/plugins/dislog.svg)](https://pkg.go.dev/github.com/BOOMfinity/golog/v3/plugins/dislog)
+### Discord [![Go Reference](https://pkg.go.dev/badge/github.com/BOOMfinity/golog/plugins/dislog/v3.svg)](https://pkg.go.dev/github.com/BOOMfinity/golog/plugins/dislog/v3)
 
 Sends logs to a Discord channel via webhooks.
 
 ```
-go get github.com/BOOMfinity/golog/v3/plugins/dislog
+go get github.com/BOOMfinity/golog/plugins/dislog/v3
 ```
 
 ```go
