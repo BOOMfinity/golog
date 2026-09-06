@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/BOOMfinity/golog/v3"
 	"github.com/BOOMfinity/golog/v3/gcore"
@@ -51,14 +52,18 @@ type Config struct {
 }
 
 const (
-	LayoutComponentsLimit = 5
+	LayoutComponentsLimit  = 5
+	messageTextLimit       = 4000 // Count bytes conservatively; never split a UTF-8 character.
+	messageComponentsLimit = 40
 )
 
 type hook struct {
-	wh      *webhook.Client
-	entries []discord.LayoutComponent
-	mu      sync.Mutex
-	config  Config
+	wh         *webhook.Client
+	entries    []discord.LayoutComponent
+	textBytes  int
+	components int
+	mu         sync.Mutex
+	config     Config
 }
 
 func (h *hook) _flush(lock bool) {
@@ -71,7 +76,7 @@ func (h *hook) _flush(lock bool) {
 		return
 	}
 
-	_internal.Trace().Attr("lock", lock).Msgf("Flushing %d entries", h.entries)
+	_internal.Trace().Attr("lock", lock).Msgf("Flushing %d entries", len(h.entries))
 
 	if _, err := h.wh.CreateMessage(discord.WebhookMessageCreate{
 		Components: h.entries,
@@ -79,11 +84,13 @@ func (h *hook) _flush(lock bool) {
 	}, rest.CreateWebhookMessageParams{
 		WithComponents: true,
 	}); err != nil {
-		fmt.Fprintf(os.Stderr, "[golog/dislog] webhook failed: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "[golog/dislog] webhook failed: %v\n", err)
 	}
 
 	clear(h.entries)
 	h.entries = h.entries[:0]
+	h.textBytes = 0
+	h.components = 0
 }
 
 func (h *hook) createTextDisplay(ctx gcore.Context) (d discord.TextDisplayComponent) {
@@ -118,12 +125,7 @@ func (h *hook) createTextDisplay(ctx gcore.Context) (d discord.TextDisplayCompon
 	}
 
 	if ctx.HasStackTrace() {
-		available := 1800 - len(d.Content)
-		stack := strings.Clone(ctx.StackTrace())
-		if len(stack) > available {
-			stack = stack[:available] + "..."
-		}
-		d.Content += "\n\n```" + stack + "```"
+		d.Content += "\n\n```" + ctx.StackTrace() + "```"
 	}
 
 	d.Content += "\n\n-# "
@@ -193,31 +195,37 @@ func Init(wh *webhook.Client, cfg ...Config) gcore.Hook {
 			h.mu.Lock()
 			defer h.mu.Unlock()
 
-			td := h.createTextDisplay(entry)
+			for _, content := range splitText(h.createTextDisplay(entry).Content) {
+				td := discord.TextDisplayComponent{Content: content}
 
-			if len(h.entries) >= LayoutComponentsLimit {
-				h._flush(false)
-			}
-
-			color := h.color(entry)
-
-			var container *discord.ContainerComponent
-
-			if len(h.entries) > 0 {
-				container = h.entries[len(h.entries)-1].(*discord.ContainerComponent)
-			}
-
-			if container == nil || container.AccentColor != color || len(container.Components) >= 8 {
-				container = &discord.ContainerComponent{
-					AccentColor: color,
+				if len(h.entries) >= LayoutComponentsLimit || h.textBytes+len(content) > messageTextLimit || h.components+2 > messageComponentsLimit {
+					h._flush(false)
 				}
-				h.entries = append(h.entries, container)
-			}
 
-			if len(container.Components) == 0 {
-				container.Components = []discord.ContainerSubComponent{td}
-			} else {
-				container.Components = append(container.Components, discord.SeparatorComponent{}, td)
+				color := h.color(entry)
+
+				var container *discord.ContainerComponent
+
+				if len(h.entries) > 0 {
+					container = h.entries[len(h.entries)-1].(*discord.ContainerComponent)
+				}
+
+				if container == nil || container.AccentColor != color || len(container.Components) >= 8 {
+					container = &discord.ContainerComponent{
+						AccentColor: color,
+					}
+					h.entries = append(h.entries, container)
+				}
+
+				if len(container.Components) == 0 {
+					container.Components = []discord.ContainerSubComponent{td}
+				} else {
+					container.Components = append(container.Components, discord.SeparatorComponent{}, td)
+				}
+
+				h.textBytes += len(content)
+				// Each display adds a container or separator alongside the text component.
+				h.components += 2
 			}
 
 			if entry.Level() == gcore.LevelFatal {
@@ -225,4 +233,21 @@ func Init(wh *webhook.Client, cfg ...Config) gcore.Hook {
 			}
 		}
 	}
+}
+
+// splitText preserves the entire formatted log, including its stack trace and footer.
+func splitText(content string) []string {
+	var parts []string
+	for len(content) > messageTextLimit {
+		end := messageTextLimit
+		for !utf8.RuneStart(content[end]) {
+			end--
+		}
+		parts = append(parts, content[:end])
+		content = content[end:]
+	}
+	if content != "" {
+		parts = append(parts, content)
+	}
+	return parts
 }
