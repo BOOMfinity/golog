@@ -31,7 +31,7 @@ func (h *handler) handle(ctx gcore.Context) {
 	modules, scopes := ctx.Modules()
 	buff = h.appendKey(buff, "module")
 	buff = append(buff, '"')
-	for i := 0; i < len(modules); i++ {
+	for i := range len(modules) {
 		buff = append(buff, modules[i]...)
 		if scopes[i] != "" {
 			buff = append(buff, '@')
@@ -73,7 +73,7 @@ func (h *handler) handle(ctx gcore.Context) {
 	buff = append(buff, '\n')
 
 	if _, err := h.config.Base.Writer(ctx.Level()).Write(buff); err != nil {
-		fmt.Fprintf(os.Stderr, "[golog/jsonfmt] write failed: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "[golog/jsonfmt] write failed: %v\n", err)
 	}
 }
 
